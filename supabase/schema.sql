@@ -55,7 +55,7 @@ insert into public.settings (id) values (1) on conflict (id) do nothing;
 create table if not exists public.mesas (
   id            uuid primary key default gen_random_uuid(),
   nome          text not null check (char_length(nome) between 1 and 20),
-  area          text not null default 'Salão Interno' check (area in ('Salão Interno','Mezanino','Kids')),
+  area          text not null default 'Salão Principal' check (area in ('Salão Principal','Mezanino','Kids')),
   cap_min       int  not null default 1 check (cap_min >= 1),
   cap_max       int  not null default 4 check (cap_max >= cap_min),
   pos_x         int  not null default 0,
@@ -77,8 +77,8 @@ create table if not exists public.fila (
   nome        text not null check (char_length(nome) between 1 and 80),
   telefone    text not null check (char_length(telefone) between 8 and 20),
   pessoas     int  not null check (pessoas between 1 and 30),
-  area        text not null default 'Sem preferência' check (area in ('Salão Interno','Mezanino','Kids','Sem preferência')),
-  ocasiao     text not null default 'Casual' check (char_length(ocasiao) <= 40),
+  area        text not null default 'Sem preferência' check (area in ('Salão Principal','Mezanino','Kids','Sem preferência')),
+  como_conheceu text not null default 'Não informado' check (char_length(como_conheceu) <= 80),
   prioritario boolean not null default false,   -- só a recepção marca
   pager_fisico text check (pager_fisico is null or char_length(pager_fisico) <= 10),  -- nº do pager entregue ao cliente
   status      text not null default 'aguardando'
@@ -103,8 +103,8 @@ create table if not exists public.reservas (
   data        date not null,
   hora        time not null,
   pessoas     int  not null check (pessoas between 1 and 100),
-  area        text not null default 'Sem preferência' check (area in ('Salão Interno','Mezanino','Kids','Sem preferência')),
-  ocasiao     text not null default 'Casual' check (char_length(ocasiao) <= 40),
+  area        text not null default 'Sem preferência' check (area in ('Salão Principal','Mezanino','Kids','Sem preferência')),
+  como_conheceu text not null default 'Não informado' check (char_length(como_conheceu) <= 80),
   obs         text check (obs is null or char_length(obs) <= 300),
   status      text not null default 'pendente'
               check (status in ('pendente','confirmada','chegou','sentada','concluida','cancelada','nao_compareceu')),
@@ -116,19 +116,42 @@ create index if not exists reservas_data_idx on public.reservas (data, status);
 create index if not exists reservas_mesa_idx on public.reservas (mesa_id, data);
 
 -- ---------------------------------------------------------------------
--- 5b. Migração (para bancos que já rodaram a versão anterior): salões
---     Salão Interno / Mezanino / Kids (a antiga "Área Externa" foi removida)
+-- 5b. Migração (para bancos que já rodaram versões anteriores)
+--     - salões: Salão Principal / Mezanino / Kids
+--     - "ocasião" virou "como conheceu o Drive"
 -- ---------------------------------------------------------------------
-update public.mesas    set area = 'Salão Interno' where area = 'Área Externa';
-update public.fila     set area = 'Salão Interno' where area = 'Área Externa';
-update public.reservas set area = 'Salão Interno' where area = 'Área Externa';
-
 alter table public.mesas    drop constraint if exists mesas_area_check;
 alter table public.fila     drop constraint if exists fila_area_check;
 alter table public.reservas drop constraint if exists reservas_area_check;
-alter table public.mesas    add constraint mesas_area_check    check (area in ('Salão Interno','Mezanino','Kids'));
-alter table public.fila     add constraint fila_area_check     check (area in ('Salão Interno','Mezanino','Kids','Sem preferência'));
-alter table public.reservas add constraint reservas_area_check check (area in ('Salão Interno','Mezanino','Kids','Sem preferência'));
+
+update public.mesas    set area = 'Salão Principal' where area in ('Salão Interno','Área Externa');
+update public.fila     set area = 'Salão Principal' where area in ('Salão Interno','Área Externa');
+update public.reservas set area = 'Salão Principal' where area in ('Salão Interno','Área Externa');
+
+alter table public.mesas    add constraint mesas_area_check    check (area in ('Salão Principal','Mezanino','Kids'));
+alter table public.fila     add constraint fila_area_check     check (area in ('Salão Principal','Mezanino','Kids','Sem preferência'));
+alter table public.reservas add constraint reservas_area_check check (area in ('Salão Principal','Mezanino','Kids','Sem preferência'));
+
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema='public' and table_name='fila' and column_name='ocasiao') then
+    alter table public.fila rename column ocasiao to como_conheceu;
+    alter table public.fila alter column como_conheceu set default 'Não informado';
+    update public.fila set como_conheceu = 'Não informado';   -- os valores antigos eram "ocasião"
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema='public' and table_name='reservas' and column_name='ocasiao') then
+    alter table public.reservas rename column ocasiao to como_conheceu;
+    alter table public.reservas alter column como_conheceu set default 'Não informado';
+    update public.reservas set como_conheceu = 'Não informado';
+  end if;
+end $$;
+
+alter table public.fila     drop constraint if exists fila_ocasiao_check;
+alter table public.fila     drop constraint if exists fila_como_conheceu_check;
+alter table public.reservas drop constraint if exists reservas_ocasiao_check;
+alter table public.reservas drop constraint if exists reservas_como_conheceu_check;
+alter table public.fila     add constraint fila_como_conheceu_check     check (char_length(como_conheceu) <= 80);
+alter table public.reservas add constraint reservas_como_conheceu_check check (char_length(como_conheceu) <= 80);
 
 alter table public.fila add column if not exists pager_fisico text;
 alter table public.fila drop constraint if exists fila_pager_fisico_check;
@@ -163,6 +186,14 @@ grant select, insert, update, delete on public.settings, public.mesas, public.fi
 -- ---------------------------------------------------------------------
 -- 7. Funções internas
 -- ---------------------------------------------------------------------
+-- (os nomes dos parâmetros mudaram: remove as versões antigas antes de recriar)
+drop function if exists public._fila_inserir(text,text,int,text,text,boolean);
+drop function if exists public._reserva_inserir(text,text,text,date,text,int,text,text,text,text);
+drop function if exists public.fila_entrar(text,text,int,text,text,boolean);
+drop function if exists public.fila_adicionar_equipe(text,text,int,text,text,boolean);
+drop function if exists public.reserva_criar(text,text,text,date,text,int,text,text,text);
+drop function if exists public.reserva_criar_equipe(text,text,text,date,text,int,text,text,text);
+
 create or replace function public._agora()
 returns timestamp
 language sql stable security definer set search_path = public as $$
@@ -202,7 +233,7 @@ begin
 end $$;
 
 create or replace function public._fila_inserir(
-  p_nome text, p_telefone text, p_pessoas int, p_area text, p_ocasiao text, p_prioritario boolean)
+  p_nome text, p_telefone text, p_pessoas int, p_area text, p_como_conheceu text, p_prioritario boolean)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -218,7 +249,7 @@ begin
   if length(trim(coalesce(p_nome,''))) < 2 then raise exception 'Informe seu nome.'; end if;
   if length(tel) < 10 or length(tel) > 13 then raise exception 'Informe um telefone válido, com DDD.'; end if;
   if p_pessoas is null or p_pessoas < 1 or p_pessoas > 30 then raise exception 'Número de pessoas inválido.'; end if;
-  if coalesce(p_area,'Sem preferência') not in ('Salão Interno','Mezanino','Kids','Sem preferência') then
+  if coalesce(p_area,'Sem preferência') not in ('Salão Principal','Mezanino','Kids','Sem preferência') then
     raise exception 'Área inválida.';
   end if;
 
@@ -236,10 +267,10 @@ begin
 
   select coalesce(max(pager),0) + 1 into n from public.fila where dia = hoje;
 
-  insert into public.fila (dia, pager, nome, telefone, pessoas, area, ocasiao, prioritario)
+  insert into public.fila (dia, pager, nome, telefone, pessoas, area, como_conheceu, prioritario)
   values (hoje, n, left(trim(p_nome),80), left(trim(p_telefone),20), p_pessoas,
           coalesce(nullif(p_area,''),'Sem preferência'),
-          left(coalesce(nullif(p_ocasiao,''),'Casual'),40),
+          left(coalesce(nullif(trim(p_como_conheceu),''),'Não informado'),80),
           coalesce(p_prioritario,false))
   returning * into novo;
 
@@ -248,7 +279,7 @@ end $$;
 
 create or replace function public._reserva_inserir(
   p_nome text, p_telefone text, p_email text, p_data date, p_hora text, p_pessoas int,
-  p_area text, p_ocasiao text, p_obs text, p_origem text)
+  p_area text, p_como_conheceu text, p_obs text, p_origem text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -270,7 +301,7 @@ begin
   if length(tel) < 10 or length(tel) > 13 then raise exception 'Informe um telefone válido, com DDD.'; end if;
   if p_pessoas is null or p_pessoas < 1 then raise exception 'Número de pessoas inválido.'; end if;
   if p_data is null or p_hora is null then raise exception 'Informe data e horário.'; end if;
-  if coalesce(p_area,'Sem preferência') not in ('Salão Interno','Mezanino','Kids','Sem preferência') then
+  if coalesce(p_area,'Sem preferência') not in ('Salão Principal','Mezanino','Kids','Sem preferência') then
     raise exception 'Área inválida.';
   end if;
 
@@ -310,10 +341,10 @@ begin
 
   if p_origem = 'equipe' or s.confirmar_automatico then st := 'confirmada'; else st := 'pendente'; end if;
 
-  insert into public.reservas (codigo, nome, telefone, email, data, hora, pessoas, area, ocasiao, obs, status, mesa_id, origem)
+  insert into public.reservas (codigo, nome, telefone, email, data, hora, pessoas, area, como_conheceu, obs, status, mesa_id, origem)
   values (cod, left(trim(p_nome),80), left(trim(p_telefone),20), left(nullif(trim(coalesce(p_email,'')),''),120),
           p_data, p_hora::time, p_pessoas, coalesce(p_area,'Sem preferência'),
-          left(coalesce(nullif(p_ocasiao,''),'Casual'),40), left(nullif(trim(coalesce(p_obs,'')),''),300),
+          left(coalesce(nullif(trim(p_como_conheceu),''),'Não informado'),80), left(nullif(trim(coalesce(p_obs,'')),''),300),
           st, mesa, p_origem)
   returning * into novo;
 
@@ -344,7 +375,7 @@ $$;
 
 -- FILA ---------------------------------------------------------------
 create or replace function public.fila_entrar(
-  p_nome text, p_telefone text, p_pessoas int, p_area text, p_ocasiao text, p_prioritario boolean)
+  p_nome text, p_telefone text, p_pessoas int, p_area text, p_como_conheceu text, p_prioritario boolean)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
@@ -352,16 +383,16 @@ begin
     raise exception 'A fila de espera está fechada no momento.';
   end if;
   -- prioridade só pode ser marcada pela recepção: o parâmetro do cliente é ignorado
-  return public._fila_inserir(p_nome, p_telefone, p_pessoas, p_area, p_ocasiao, false);
+  return public._fila_inserir(p_nome, p_telefone, p_pessoas, p_area, p_como_conheceu, false);
 end $$;
 
 create or replace function public.fila_adicionar_equipe(
-  p_nome text, p_telefone text, p_pessoas int, p_area text, p_ocasiao text, p_prioritario boolean)
+  p_nome text, p_telefone text, p_pessoas int, p_area text, p_como_conheceu text, p_prioritario boolean)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_staff() then raise exception 'Acesso restrito à equipe.'; end if;
-  return public._fila_inserir(p_nome, p_telefone, p_pessoas, p_area, p_ocasiao, p_prioritario);
+  return public._fila_inserir(p_nome, p_telefone, p_pessoas, p_area, p_como_conheceu, p_prioritario);
 end $$;
 
 create or replace function public.fila_status(p_token uuid)
@@ -446,20 +477,20 @@ end $$;
 
 create or replace function public.reserva_criar(
   p_nome text, p_telefone text, p_email text, p_data date, p_hora text, p_pessoas int,
-  p_area text, p_ocasiao text, p_obs text)
+  p_area text, p_como_conheceu text, p_obs text)
 returns jsonb
 language sql security definer set search_path = public as $$
-  select public._reserva_inserir(p_nome, p_telefone, p_email, p_data, p_hora, p_pessoas, p_area, p_ocasiao, p_obs, 'online');
+  select public._reserva_inserir(p_nome, p_telefone, p_email, p_data, p_hora, p_pessoas, p_area, p_como_conheceu, p_obs, 'online');
 $$;
 
 create or replace function public.reserva_criar_equipe(
   p_nome text, p_telefone text, p_email text, p_data date, p_hora text, p_pessoas int,
-  p_area text, p_ocasiao text, p_obs text)
+  p_area text, p_como_conheceu text, p_obs text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_staff() then raise exception 'Acesso restrito à equipe.'; end if;
-  return public._reserva_inserir(p_nome, p_telefone, p_email, p_data, p_hora, p_pessoas, p_area, p_ocasiao, p_obs, 'equipe');
+  return public._reserva_inserir(p_nome, p_telefone, p_email, p_data, p_hora, p_pessoas, p_area, p_como_conheceu, p_obs, 'equipe');
 end $$;
 
 -- consulta exige código + telefone (evita que alguém veja reservas de outras pessoas)
@@ -468,7 +499,7 @@ returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'codigo', r.codigo, 'nome', r.nome, 'data', r.data, 'hora', to_char(r.hora,'HH24:MI'),
-    'pessoas', r.pessoas, 'area', r.area, 'ocasiao', r.ocasiao, 'obs', r.obs, 'status', r.status)
+    'pessoas', r.pessoas, 'area', r.area, 'como_conheceu', r.como_conheceu, 'obs', r.obs, 'status', r.status)
   from public.reservas r
   where r.codigo = upper(trim(p_codigo))
     and regexp_replace(r.telefone,'\D','','g') = regexp_replace(coalesce(p_telefone,''),'\D','','g')
@@ -523,9 +554,9 @@ end $$;
 -- ---------------------------------------------------------------------
 insert into public.mesas (nome, area, cap_min, cap_max, pos_x, pos_y)
 select * from (values
-  ('M1','Salão Interno',1,2,0,0), ('M2','Salão Interno',1,2,1,0), ('M3','Salão Interno',2,4,2,0),
-  ('M4','Salão Interno',2,4,3,0), ('M5','Salão Interno',3,6,0,2), ('M6','Salão Interno',3,6,2,2),
-  ('M7','Salão Interno',5,10,4,2),
+  ('M1','Salão Principal',1,2,0,0), ('M2','Salão Principal',1,2,1,0), ('M3','Salão Principal',2,4,2,0),
+  ('M4','Salão Principal',2,4,3,0), ('M5','Salão Principal',3,6,0,2), ('M6','Salão Principal',3,6,2,2),
+  ('M7','Salão Principal',5,10,4,2),
   ('Z1','Mezanino',2,4,0,5), ('Z2','Mezanino',2,4,1,5), ('Z3','Mezanino',3,6,2,5), ('Z4','Mezanino',5,10,4,5),
   ('K1','Kids',2,4,7,0), ('K2','Kids',3,6,8,0), ('K3','Kids',5,10,9,2)
 ) as v(nome, area, cap_min, cap_max, pos_x, pos_y)

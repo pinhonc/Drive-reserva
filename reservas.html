@@ -34,7 +34,7 @@
         <div class="field"><label>Onde prefere sentar?</label>
           <div class="chips">
             <input type="radio" name="area" id="a3" value="Sem preferência" checked><label for="a3">Tanto faz</label>
-            <input type="radio" name="area" id="a1" value="Salão Interno"><label for="a1">Salão interno</label>
+            <input type="radio" name="area" id="a1" value="Salão Principal"><label for="a1">Salão Principal</label>
             <input type="radio" name="area" id="a2" value="Mezanino"><label for="a2">Mezanino</label>
             <input type="radio" name="area" id="a4" value="Kids"><label for="a4">Kids</label>
           </div>
@@ -51,9 +51,7 @@
           <div class="field"><label for="tel">Telefone / WhatsApp</label><input type="tel" id="tel" autocomplete="tel" inputmode="tel" placeholder="(41) 90000-0000" required></div>
           <div class="field"><label for="email">E-mail <span style="font-weight:400;color:var(--text-muted)">(opcional)</span></label><input type="email" id="email" autocomplete="email" maxlength="120"></div>
         </div>
-        <div class="field"><label for="oc">Ocasião</label>
-          <select id="oc"><option>Casual</option><option>Aniversário</option><option>Encontro</option><option>Em família</option><option>Reunião de amigos</option><option>Outro</option></select>
-        </div>
+        <div id="comoBox"></div>
         <div class="field"><label for="obs">Observações <span style="font-weight:400;color:var(--text-muted)">(opcional)</span></label><textarea id="obs" maxlength="300" placeholder="Cadeirinha de bebê, alergias, comemoração…"></textarea></div>
         <button class="btn btn-primary" id="submit" type="submit" disabled>Escolha um horário</button>
       </form>

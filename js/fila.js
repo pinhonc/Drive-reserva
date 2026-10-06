@@ -82,6 +82,7 @@
     }
   }
 
+  $("comoBox").innerHTML = D.comoHtml("como"); D.bindComo("como");
   D.maskPhone($("tel"));
   $("minus").onclick = function () { qtd = Math.max(1, qtd - 1); $("qtd").textContent = qtd; };
   $("plus").onclick = function () { qtd = Math.min(30, qtd + 1); $("qtd").textContent = qtd; };
@@ -97,7 +98,7 @@
       var r = await D.rpc("fila_entrar", {
         p_nome: nome, p_telefone: tel, p_pessoas: qtd,
         p_area: (document.querySelector('input[name="area"]:checked') || {}).value || "Sem preferência",
-        p_ocasiao: $("oc").value, p_prioritario: false
+        p_como_conheceu: D.comoValue("como"), p_prioritario: false
       });
       localStorage.setItem(KEY, r.token);
       lastStatus = null;

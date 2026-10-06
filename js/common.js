@@ -55,7 +55,25 @@
   function showSetupMissing(root) {
     root.innerHTML = '<div class="card"><h3>Configuração pendente</h3><p>Preencha o arquivo <b>config.js</b> com a URL e a chave <i>anon</i> do projeto Supabase e publique novamente.</p></div>';
   }
+
+  // "Como conheceu o Drive?" (lista + campo livre para "Outros")
+  var COMO = ["Indicação de amigos/familiares", "Passando em frente ao Drive", "Google", "Redes Sociais", "Prêmio Bom Gourmet", "Outros"];
+  function comoHtml(id) {
+    return '<div class="field"><label for="' + id + '">Como conheceu o Drive?</label><select id="' + id + '"><option value="">Selecione…</option>' +
+      COMO.map(function (o) { return "<option>" + esc(o) + "</option>"; }).join("") + "</select>" +
+      '<input type="text" id="' + id + 'Outro" maxlength="60" placeholder="Conte como nos conheceu" style="margin-top:8px" hidden></div>';
+  }
+  function bindComo(id) {
+    var sel = $(id), out = $(id + "Outro");
+    sel.addEventListener("change", function () { out.hidden = sel.value !== "Outros"; if (!out.hidden) out.focus(); });
+  }
+  function comoValue(id) {
+    var v = $(id).value; if (!v) return "";
+    if (v === "Outros") { var t = $(id + "Outro").value.trim(); return t ? "Outros: " + t : "Outros"; }
+    return v;
+  }
   window.DIB = {
+    comoHtml: comoHtml, bindComo: bindComo, comoValue: comoValue,
     sb: sb, configured: configured, $: $, esc: esc, digits: digits, fmtPhone: fmtPhone, maskPhone: maskPhone,
     fmtDate: fmtDate, weekday: weekday, addDays: addDays, waLink: waLink, rpc: rpc, toast: toast,
     setNotice: setNotice, showSetupMissing: showSetupMissing

@@ -41,17 +41,25 @@ confirmação automática (ou manual, se preferir), consulta/cancelamento por c�
 (o cliente lê e volta a acompanhar a posição no celular), marcar/tirar prioridade, chamar / sentar em mesa / não veio,
 WhatsApp com mensagem pronta,
 fila aberta/fechada, reservas por dia (confirmar, chegou, sentar, finalizar, não compareceu, cancelar, destaque de atrasadas),
-reserva por telefone, mapa de mesas com status (livre, ocupada, reservada, limpeza), relatórios dos últimos 7 dias
-(espera média, desistência, no-show) e ajustes.
+reserva por telefone, mapa de mesas com status (livre, ocupada, reservada, limpeza), relatórios por período (hoje, 7, 30 ou 90 dias)
+com espera média, desistência, no-show, fila e reservas por dia/semana e **como os clientes conheceram o Drive**
+(ranking dos canais, fila e reservas juntas, e o que escreveram em "Outros"), e ajustes.
 
 **Alocação automática de mesas:** cada reserva já nasce com a menor mesa que comporta o grupo e não tem conflito de
 horário — isso evita overbooking.
 
 ## Salões
 
-Salão Interno, Mezanino e Kids (a antiga "Área Externa" foi removida). Rodar o `schema.sql` de novo é seguro: mesas, filas
-e reservas antigas de "Área Externa" passam para "Salão Interno" e o restante dos dados é mantido. As mesas de exemplo só são
-criadas em banco sem mesas; num banco já usado, ajuste em **Mesas**.
+Salão Principal, Mezanino e Kids. Rodar o `schema.sql` de novo é seguro: mesas, filas e reservas antigas de "Salão Interno"
+ou "Área Externa" passam para "Salão Principal" e o restante dos dados é mantido. As mesas de exemplo só são criadas em
+banco sem mesas; num banco já usado, ajuste em **Mesas**.
+
+## Como conheceu o Drive
+
+No lugar de "Ocasião", fila e reservas perguntam **"Como conheceu o Drive?"**, com as opções: Indicação de amigos/familiares,
+Passando em frente ao Drive, Google, Redes Sociais, Prêmio Bom Gourmet e Outros (abre um campo para digitar). O campo é opcional;
+sem resposta, fica "Não informado". A recepção também preenche ao adicionar cliente ou reserva, e a resposta aparece na lista.
+Ao atualizar o banco, os valores antigos de "ocasião" viram "Não informado".
 
 ## Limites desta versão
 

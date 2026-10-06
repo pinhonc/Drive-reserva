@@ -1,9 +1,9 @@
 (function () {
   "use strict";
   var D = window.DIB, $ = D.$, sb = D.sb, esc = D.esc;
-  var S = { cfg: null, hoje: "", resData: "", mesas: [], fila: [], reservas: [], reservasHoje: [], pendentes: 0, tab: "fila", edit: false, channel: null };
+  var S = { cfg: null, hoje: "", resData: "", mesas: [], fila: [], reservas: [], reservasHoje: [], pendentes: 0, tab: "fila", edit: false, relDias: 7, channel: null };
   var audio = null;
-  var AREAS = ["Salão Interno", "Mezanino", "Kids"];
+  var AREAS = ["Salão Principal", "Mezanino", "Kids"];
   function areaOpts(any, sel) {
     return (any ? "<option>Sem preferência</option>" : "") + AREAS.map(function (a) { return "<option" + (a === sel ? " selected" : "") + ">" + a + "</option>"; }).join("");
   }
@@ -188,7 +188,7 @@
       return '<div class="item ' + (called ? "called" : "") + '" data-id="' + f.id + '"><div class="top"><div class="num">' + String(f.pager).padStart(3, "0") + '</div><div class="nm">' + esc(f.nome) + "</div>" +
         (f.prioritario ? '<span class="pill gold">Prioritário</span>' : "") + (called ? '<span class="pill ok">Chamado há ' + minsSince(f.chamado_em) + " min</span>" : "") + "</div>" +
         '<div class="meta">' + (pos ? "<span><b>" + pos + "º</b> na fila</span>" : "") + "<span>👥 <b>" + f.pessoas + "</b></span><span>📍 " + esc(f.area) + "</span><span>" +
-        (f.ocasiao === "Aniversário" ? "🎂 " : "🎉 ") + esc(f.ocasiao) + "</span><span>⏱ há <b>" + minsSince(f.created_at) + " min</b></span><span>📞 " + esc(f.telefone) + "</span></div>" +
+        "📣 " + esc(f.como_conheceu) + "</span><span>⏱ há <b>" + minsSince(f.created_at) + " min</b></span><span>📞 " + esc(f.telefone) + "</span></div>" +
         '<div class="meta" style="align-items:center"><label>📟 Pager nº <input class="pg" type="text" inputmode="numeric" maxlength="10" value="' + esc(f.pager_fisico || "") + '" placeholder="—" style="width:84px;padding:6px 8px;display:inline-block"></label></div>' +
         '<div class="acts">' + (called ? "" : '<button class="btn btn-secondary btn-sm" data-act="chamar">Chamar</button>') +
         '<button class="btn btn-primary btn-sm" data-act="sentar">Sentar</button><button class="btn btn-secondary btn-sm" data-act="wa">WhatsApp</button>' +
@@ -252,16 +252,17 @@
       '<div class="field"><label>Nome</label><input type="text" id="n" maxlength="80"></div>' +
       '<div class="row2"><div class="field"><label>Telefone</label><input type="tel" id="t" placeholder="(41) 90000-0000"></div><div class="field"><label>Pessoas</label><input type="number" id="p" min="1" max="30" value="2"></div></div>' +
       '<div class="row2"><div class="field"><label>Área</label><select id="a">' + areaOpts(true) + '</select></div>' +
-      '<div class="field"><label>Ocasião</label><select id="o"><option>Casual</option><option>Aniversário</option><option>Encontro</option><option>Em família</option><option>Reunião de amigos</option><option>Outro</option></select></div></div>' +
+      '<div id="coBox"></div></div>' +
       '<div class="field"><label>Nº do pager (opcional)</label><input type="text" id="pg" inputmode="numeric" maxlength="10" placeholder="Número do pager entregue ao cliente"></div>' +
       '<label class="switch"><input type="checkbox" id="pr"> Atendimento prioritário (idoso, gestante, PCD)</label>' +
       '<div class="foot"><button class="btn btn-secondary" id="cx">Cancelar</button><button class="btn btn-primary" id="ok">Adicionar</button></div>',
       function (m) {
         D.maskPhone(m.querySelector("#t")); m.querySelector("#cx").onclick = closeModal;
+        m.querySelector("#coBox").innerHTML = D.comoHtml("co"); D.bindComo("co");
         m.querySelector("#ok").onclick = async function () {
           try {
             var r = await D.rpc("fila_adicionar_equipe", { p_nome: m.querySelector("#n").value, p_telefone: m.querySelector("#t").value, p_pessoas: parseInt(m.querySelector("#p").value, 10),
-              p_area: m.querySelector("#a").value, p_ocasiao: m.querySelector("#o").value, p_prioritario: m.querySelector("#pr").checked });
+              p_area: m.querySelector("#a").value, p_como_conheceu: D.comoValue("co"), p_prioritario: m.querySelector("#pr").checked });
             var pg = m.querySelector("#pg").value.trim();
             if (pg) must(await sb.from("fila").update({ pager_fisico: pg }).eq("token", r.token));
             closeModal(); await loadFila(); renderActive();
@@ -296,7 +297,7 @@
       return '<div class="item ' + (late ? "late" : "") + '" data-id="' + r.id + '"><div class="top"><div class="num">' + hhmm(r.hora) + '</div><div class="nm">' + esc(r.nome) + " · " + r.pessoas + 'p</div>' +
         (late ? '<span class="pill bad">Atrasada</span>' : "") + '<span class="pill ' + st[1] + '">' + st[0] + "</span></div>" +
         '<div class="meta"><span>🔑 <b>' + esc(r.codigo) + "</b></span><span>📞 " + esc(r.telefone) + "</span><span>📍 " + esc(r.area) + (mesa ? " · mesa <b>" + esc(mesa.nome) + "</b>" : "") + "</span><span>" +
-        (r.ocasiao === "Aniversário" ? "🎂 " : "🎉 ") + esc(r.ocasiao) + "</span><span>" + (r.origem === "equipe" ? "☎️ equipe" : "🌐 online") + "</span>" + (r.obs ? "<span>📝 " + esc(r.obs) + "</span>" : "") + "</div>" +
+        "📣 " + esc(r.como_conheceu) + "</span><span>" + (r.origem === "equipe" ? "☎️ equipe" : "🌐 online") + "</span>" + (r.obs ? "<span>📝 " + esc(r.obs) + "</span>" : "") + "</div>" +
         (acts ? '<div class="acts">' + acts + "</div>" : "") + "</div>";
     }
 
@@ -343,15 +344,16 @@
       '<div class="row2"><div class="field"><label>Telefone</label><input type="tel" id="t" placeholder="(41) 90000-0000"></div><div class="field"><label>Pessoas</label><input type="number" id="p" min="1" max="100" value="2"></div></div>' +
       '<div class="row2"><div class="field"><label>Data</label><input type="date" id="d" value="' + S.resData + '"></div><div class="field"><label>Horário</label><input type="time" id="h" value="19:00"></div></div>' +
       '<div class="row2"><div class="field"><label>Área</label><select id="a">' + areaOpts(true) + '</select></div>' +
-      '<div class="field"><label>Ocasião</label><select id="o"><option>Casual</option><option>Aniversário</option><option>Encontro</option><option>Em família</option><option>Reunião de amigos</option><option>Outro</option></select></div></div>' +
+      '<div id="coBox"></div></div>' +
       '<div class="field"><label>Observações</label><textarea id="ob" maxlength="300"></textarea></div>' +
       '<div class="foot"><button class="btn btn-secondary" id="cx">Cancelar</button><button class="btn btn-primary" id="ok">Reservar</button></div>',
       function (m) {
         D.maskPhone(m.querySelector("#t")); m.querySelector("#cx").onclick = closeModal;
+        m.querySelector("#coBox").innerHTML = D.comoHtml("co"); D.bindComo("co");
         m.querySelector("#ok").onclick = async function () {
           try {
             var r = await D.rpc("reserva_criar_equipe", { p_nome: m.querySelector("#n").value, p_telefone: m.querySelector("#t").value, p_email: null, p_data: m.querySelector("#d").value,
-              p_hora: m.querySelector("#h").value, p_pessoas: parseInt(m.querySelector("#p").value, 10), p_area: m.querySelector("#a").value, p_ocasiao: m.querySelector("#o").value, p_obs: m.querySelector("#ob").value || null });
+              p_hora: m.querySelector("#h").value, p_pessoas: parseInt(m.querySelector("#p").value, 10), p_area: m.querySelector("#a").value, p_como_conheceu: D.comoValue("co"), p_obs: m.querySelector("#ob").value || null });
             closeModal(); D.toast("Reserva criada: " + r.codigo); S.resData = m.querySelector("#d").value; await loadReservas(); renderActive();
           } catch (e) { D.setNotice(m.querySelector("#e"), e.message); }
         };
@@ -470,17 +472,34 @@
 
   // ------------------------------------------------------------ RELATÓRIOS
   var relSeq = 0;
+  async function fetchAll(table, cols, apply) {
+    var out = [], from = 0, step = 1000;
+    for (;;) {
+      var rows = must(await apply(sb.from(table).select(cols)).range(from, from + step - 1)) || [];
+      out = out.concat(rows);
+      if (rows.length < step) break;
+      from += step;
+    }
+    return out;
+  }
+  var ORIGENS_LISTA = ["Indicação de amigos/familiares", "Passando em frente ao Drive", "Google", "Redes Sociais", "Prêmio Bom Gourmet", "Outros"];
+  function normOrigem(v) {
+    v = String(v || "").trim();
+    if (!v || v === "Não informado") return "Não informado";
+    return ORIGENS_LISTA.indexOf(v) >= 0 ? v : "Outros";   // "Outros: texto" e valores inesperados entram em "Outros"
+  }
+  var REL_PERIODOS = [[1, "Hoje"], [7, "7 dias"], [30, "30 dias"], [90, "90 dias"]];
+
   async function renderRel() {
     var id = ++relSeq;
     $("pane").innerHTML = '<div class="empty">Calculando…</div>';
     try {
-      var ini = D.addDays(S.hoje, -6);
-      var f = must(await sb.from("fila").select("dia,status,created_at,sentado_em,pessoas").gte("dia", ini)) || [];
-      var r = must(await sb.from("reservas").select("data,status,pessoas,origem").gte("data", ini).lte("data", S.hoje)) || [];
+      var n = S.relDias || 7, ini = D.addDays(S.hoje, -(n - 1));
+      var f = await fetchAll("fila", "dia,status,created_at,sentado_em,pessoas,como_conheceu", function (q) { return q.gte("dia", ini).order("created_at"); });
+      var r = await fetchAll("reservas", "data,status,pessoas,origem,como_conheceu,created_at", function (q) { return q.gte("data", ini).lte("data", S.hoje).order("created_at"); });
       if (id !== relSeq || S.tab !== "rel") return;
-      var dias = []; for (var i = 6; i >= 0; i--) dias.push(D.addDays(S.hoje, -i));
-      var fPorDia = dias.map(function (d) { return f.filter(function (x) { return x.dia === d; }).length; });
-      var rPorDia = dias.map(function (d) { return r.filter(function (x) { return x.data === d && x.status !== "cancelada"; }).length; });
+
+      // ---- números gerais
       var sent = f.filter(function (x) { return x.status === "sentado" && x.sentado_em; });
       var media = sent.length ? Math.round(sent.reduce(function (s, x) { return s + (new Date(x.sentado_em) - new Date(x.created_at)) / 60000; }, 0) / sent.length) : null;
       var desist = f.filter(function (x) { return x.status === "cancelado" || x.status === "nao_compareceu"; }).length;
@@ -488,21 +507,65 @@
       var nos = r.filter(function (x) { return x.status === "nao_compareceu"; }).length;
       var cancel = r.filter(function (x) { return x.status === "cancelada"; }).length;
       var taxaNo = comparec + nos ? Math.round(nos * 100 / (comparec + nos)) : null;
-      var maxF = Math.max.apply(null, fPorDia.concat([1])), maxR = Math.max.apply(null, rPorDia.concat([1]));
-      function bars(vals, mx) {
-        return '<div class="bars">' + dias.map(function (d, i) {
-          return '<div class="bar-row"><span>' + d.slice(8) + "/" + d.slice(5, 7) + '</span><div class="bar"><i style="width:' + Math.round(vals[i] * 100 / mx) + '%"></i></div><b>' + vals[i] + "</b></div>";
+
+      // ---- barras por dia (até 7 dias) ou por semana
+      var size = n <= 7 ? 1 : 7, buckets = [];
+      for (var i = 0; i < n; i += size) buckets.push([D.addDays(ini, i), D.addDays(ini, Math.min(i + size, n) - 1)]);
+      function inB(v, b) { return v >= b[0] && v <= b[1]; }
+      function lab(b) { var a = b[0].slice(8) + "/" + b[0].slice(5, 7); return size === 1 ? a : a + " a " + b[1].slice(8) + "/" + b[1].slice(5, 7); }
+      var fB = buckets.map(function (b) { return f.filter(function (x) { return inB(x.dia, b); }).length; });
+      var rB = buckets.map(function (b) { return r.filter(function (x) { return inB(x.data, b) && x.status !== "cancelada"; }).length; });
+      function bars(vals) {
+        var mx = Math.max.apply(null, vals.concat([1]));
+        return '<div class="bars">' + buckets.map(function (b, i) {
+          return '<div class="bar-row" style="grid-template-columns:' + (size === 1 ? 70 : 120) + 'px 1fr 40px"><span>' + lab(b) + '</span><div class="bar"><i style="width:' + Math.round(vals[i] * 100 / mx) + '%"></i></div><b>' + vals[i] + "</b></div>";
         }).join("") + "</div>";
       }
-      $("pane").innerHTML = '<div class="section-t" style="margin-top:0">Últimos 7 dias</div><div class="stats">' +
+
+      // ---- como conheceu o Drive
+      var ORIGENS = ORIGENS_LISTA;
+      var cont = {}; ORIGENS.concat(["Não informado"]).forEach(function (k) { cont[k] = { fila: 0, res: 0 }; });
+      var outrosTxt = {};
+      function conta(v, tipo) {
+        var k = normOrigem(v); if (!cont[k]) cont[k] = { fila: 0, res: 0 };
+        cont[k][tipo]++;
+        if (k === "Outros" && String(v).indexOf("Outros:") === 0) {
+          var t = String(v).slice(7).trim(), key = t.toLowerCase(); if (t) outrosTxt[key] = outrosTxt[key] || { t: t, n: 0 }, outrosTxt[key].n++;
+        }
+      }
+      f.forEach(function (x) { conta(x.como_conheceu, "fila"); });
+      r.forEach(function (x) { conta(x.como_conheceu, "res"); });
+      var tot = function (k) { return cont[k].fila + cont[k].res; };
+      var informados = ORIGENS.reduce(function (s, k) { return s + tot(k); }, 0);
+      var ranking = ORIGENS.slice().sort(function (a, b) { return tot(b) - tot(a); });
+      var topo = informados && tot(ranking[0]) ? ranking[0] : null;
+      var maxO = Math.max(tot(ranking[0]), 1);
+      var origHtml = ranking.map(function (k) {
+        var t = tot(k), pct = informados ? Math.round(t * 100 / informados) : 0;
+        return '<div class="orig-row"><div class="orig-top"><b>' + esc(k) + "</b><span>" + t + " · " + pct + '% <small>fila ' + cont[k].fila + " · reservas " + cont[k].res + '</small></span></div><div class="bar"><i style="width:' + Math.round(t * 100 / maxO) + '%"></i></div></div>';
+      }).join("");
+      var outrosList = Object.keys(outrosTxt).map(function (k) { return outrosTxt[k]; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 10);
+      var semInfo = tot("Não informado"), totalClientes = informados + semInfo;
+
+      var perHtml = REL_PERIODOS.map(function (p) { return '<button class="btn btn-sm ' + (p[0] === n ? "btn-primary" : "btn-secondary") + '" data-per="' + p[0] + '">' + p[1] + "</button>"; }).join("");
+      $("pane").innerHTML =
+        '<div class="toolbar"><div class="daynav">' + perHtml + '</div><span class="grow"></span><span class="hint" style="margin:0">' + D.fmtDate(ini) + " a " + D.fmtDate(S.hoje) + "</span></div>" +
+        '<div class="stats">' +
         '<div class="stat"><div class="n">' + f.length + '</div><div class="l">entradas na fila</div></div>' +
         '<div class="stat"><div class="n">' + (media === null ? "—" : media + " min") + '</div><div class="l">espera média até sentar</div></div>' +
         '<div class="stat"><div class="n">' + (f.length ? Math.round(desist * 100 / f.length) + "%" : "—") + '</div><div class="l">desistência na fila</div></div>' +
         '<div class="stat"><div class="n">' + r.length + '</div><div class="l">reservas feitas</div></div>' +
         '<div class="stat"><div class="n">' + (taxaNo === null ? "—" : taxaNo + "%") + '</div><div class="l">no-show das reservas</div></div>' +
         '<div class="stat"><div class="n">' + cancel + '</div><div class="l">reservas canceladas</div></div></div>' +
-        '<div class="card"><h3 style="font-size:17px;margin-bottom:12px">Fila por dia</h3>' + bars(fPorDia, maxF) + "</div>" +
-        '<div class="card"><h3 style="font-size:17px;margin-bottom:12px">Reservas por dia</h3>' + bars(rPorDia, maxR) + "</div>";
+        '<div class="card"><h3 style="font-size:17px;margin-bottom:4px">Como os clientes conheceram o Drive</h3>' +
+        '<p class="hint" style="margin:0 0 14px">Fila e reservas juntas. ' + (topo ? "Canal que mais traz clientes: <b>" + esc(topo) + "</b>. " : "") +
+        (totalClientes ? semInfo + " de " + totalClientes + " não responderam (" + Math.round(semInfo * 100 / totalClientes) + "%); os percentuais consideram só quem respondeu." : "Sem registros no período.") + "</p>" +
+        (informados ? origHtml : '<div class="empty" style="padding:16px">Ninguém respondeu neste período.</div>') +
+        (outrosList.length ? '<div class="section-t">O que escreveram em "Outros"</div>' + outrosList.map(function (o) { return '<div class="trow"><span class="k">' + esc(o.t) + '</span><span class="v">' + o.n + "</span></div>"; }).join("") : "") + "</div>" +
+        '<div class="card"><h3 style="font-size:17px;margin-bottom:12px">Fila ' + (size === 1 ? "por dia" : "por semana") + "</h3>" + bars(fB) + "</div>" +
+        '<div class="card"><h3 style="font-size:17px;margin-bottom:12px">Reservas ' + (size === 1 ? "por dia" : "por semana") + "</h3>" + bars(rB) + "</div>";
+
+      $("pane").querySelectorAll("[data-per]").forEach(function (b) { b.onclick = function () { S.relDias = parseInt(b.getAttribute("data-per"), 10); renderRel(); }; });
     } catch (e) { $("pane").innerHTML = '<div class="notice err">' + esc(e.message) + "</div>"; }
   }
 

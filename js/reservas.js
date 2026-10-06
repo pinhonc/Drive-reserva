@@ -86,6 +86,7 @@
     }
   }
 
+  $("comoBox").innerHTML = D.comoHtml("como"); D.bindComo("como");
   D.maskPhone($("tel")); D.maskPhone($("lkTel"));
   $("minus").onclick = function () { qtd = Math.max(1, qtd - 1); $("qtd").textContent = qtd; loadSlots(); };
   $("plus").onclick = function () { qtd = Math.min(cfg ? cfg.max_pessoas_reserva : 12, qtd + 1); $("qtd").textContent = qtd; loadSlots(); };
@@ -103,7 +104,7 @@
     try {
       var r = await D.rpc("reserva_criar", {
         p_nome: nome, p_telefone: tel, p_email: $("email").value.trim() || null, p_data: $("data").value, p_hora: slot,
-        p_pessoas: qtd, p_area: area(), p_ocasiao: $("oc").value, p_obs: $("obs").value.trim() || null
+        p_pessoas: qtd, p_area: area(), p_como_conheceu: D.comoValue("como"), p_obs: $("obs").value.trim() || null
       });
       lookupPhone = tel; renderTicket(r);
     } catch (ex) {

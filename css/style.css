@@ -192,6 +192,10 @@ textarea { resize: vertical; min-height: 64px; }
 .bar { height: 14px; background: var(--cream-2); border-radius: 7px; overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--red); border-radius: 7px; }
 
+.orig-row { margin-bottom: 12px; }
+.orig-top { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; margin-bottom: 5px; flex-wrap: wrap; }
+.orig-top small { color: var(--text-muted); margin-left: 6px; }
+
 /* modal */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
 @media (min-width: 700px) { .overlay { align-items: center; } }
