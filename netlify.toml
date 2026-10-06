@@ -1,0 +1,18 @@
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Páginas que não devem aparecer no Google
+[[headers]]
+  for = "/equipe*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/fila*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

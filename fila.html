@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Fila de espera — Drive In Burger</title>
+<link rel="icon" href="assets/logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <img src="assets/logo.jpg" alt="Drive In Burger">
+    <div class="brand"><span class="name">DRIVE IN BURGER</span><span class="tag">Home made burgers · desde 1978</span></div>
+  </header>
+
+  <main id="root">
+    <section id="vLoading"><div class="empty">Carregando…</div></section>
+
+    <section id="vClosed" hidden>
+      <div class="hero"><h1>Fila fechada</h1><p>No momento não estamos recebendo novos nomes na fila. Fale com a recepção.</p></div>
+    </section>
+
+    <section id="vForm" hidden>
+      <div class="hero"><h1>Entre na fila</h1><p>Informe seus dados e acompanhe sua posição pelo celular. Avisaremos quando sua mesa estiver pronta.</p></div>
+      <div class="notice err" id="formErr" hidden></div>
+      <form class="card" id="form" novalidate>
+        <div class="field"><label for="nome">Nome</label><input type="text" id="nome" autocomplete="name" maxlength="80" placeholder="Como podemos te chamar?" required></div>
+        <div class="field"><label for="tel">Telefone / WhatsApp</label><input type="tel" id="tel" autocomplete="tel" inputmode="tel" placeholder="(41) 90000-0000" required></div>
+        <div class="field"><label>Número de pessoas</label>
+          <div class="stepper"><button type="button" id="minus" aria-label="Menos">−</button><span class="val" id="qtd">2</span><button type="button" id="plus" aria-label="Mais">+</button></div>
+        </div>
+        <div class="field"><label>Onde prefere sentar?</label>
+          <div class="chips">
+            <input type="radio" name="area" id="a1" value="Salão Interno" checked><label for="a1">Salão interno</label>
+            <input type="radio" name="area" id="a2" value="Mezanino"><label for="a2">Mezanino</label>
+            <input type="radio" name="area" id="a4" value="Kids"><label for="a4">Kids</label>
+            <input type="radio" name="area" id="a3" value="Sem preferência"><label for="a3">Tanto faz</label>
+          </div>
+        </div>
+        <div class="field"><label for="oc">Ocasião</label>
+          <select id="oc"><option>Casual</option><option>Aniversário</option><option>Encontro</option><option>Em família</option><option>Reunião de amigos</option><option>Outro</option></select>
+        </div>
+        <button class="btn btn-primary" id="submit" type="submit">Entrar na fila</button>
+      </form>
+    </section>
+
+    <section id="vTicket" hidden>
+      <div id="calledBanner" class="called-banner" hidden>Sua mesa está pronta! Dirija-se à recepção.</div>
+      <div class="ticket">
+        <div class="ticket-top"><div class="label">SUA SENHA</div><div class="big" id="tPager">000</div></div>
+        <div class="ticket-body">
+          <div class="trow"><span class="k">Nome</span><span class="v" id="tNome"></span></div>
+          <div class="trow"><span class="k">Pessoas</span><span class="v" id="tPessoas"></span></div>
+          <div class="trow"><span class="k">Área</span><span class="v" id="tArea"></span></div>
+          <div class="trow" id="rowPager" hidden><span class="k">Pager</span><span class="v" id="tPagerFis"></span></div>
+          <div class="trow"><span class="k">Situação</span><span class="v" id="tStatus"></span></div>
+        </div>
+      </div>
+      <div class="zigzag"></div>
+      <div class="live" id="tLive"></div>
+      <div class="actions">
+        <button class="btn btn-secondary" id="btnCancel">Sair da fila</button>
+        <button class="btn btn-gold" id="btnNew" hidden>Entrar na fila de novo</button>
+      </div>
+    </section>
+  </main>
+  <footer>Mantenha esta página aberta para acompanhar sua posição.</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/fila.js"></script>
+</body>
+</html>

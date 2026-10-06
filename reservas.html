@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reservar mesa — Drive In Burger</title>
+<meta name="description" content="Reserve sua mesa no Drive In Burger.">
+<link rel="icon" href="assets/logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <img src="assets/logo.jpg" alt="Drive In Burger">
+    <div class="brand"><span class="name">DRIVE IN BURGER</span><span class="tag">Home made burgers · desde 1978</span></div>
+  </header>
+
+  <main id="root">
+    <section id="vLoading"><div class="empty">Carregando…</div></section>
+
+    <section id="vForm" hidden>
+      <div class="hero"><h1>Reserve sua mesa</h1><p>Escolha o dia, o horário e quantas pessoas. A confirmação é imediata quando há mesa disponível.</p></div>
+      <div class="notice err" id="formErr" hidden></div>
+
+      <div class="card">
+        <div class="field"><label>Quantas pessoas?</label>
+          <div class="stepper"><button type="button" id="minus" aria-label="Menos">−</button><span class="val" id="qtd">2</span><button type="button" id="plus" aria-label="Mais">+</button></div>
+          <div class="hint" id="maxHint"></div>
+        </div>
+        <div class="field"><label for="data">Data</label><input type="date" id="data" required></div>
+        <div class="field"><label>Onde prefere sentar?</label>
+          <div class="chips">
+            <input type="radio" name="area" id="a3" value="Sem preferência" checked><label for="a3">Tanto faz</label>
+            <input type="radio" name="area" id="a1" value="Salão Interno"><label for="a1">Salão interno</label>
+            <input type="radio" name="area" id="a2" value="Mezanino"><label for="a2">Mezanino</label>
+            <input type="radio" name="area" id="a4" value="Kids"><label for="a4">Kids</label>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:0"><label>Horário</label>
+          <div id="slots" class="slots"></div>
+          <div class="hint" id="slotsHint"></div>
+        </div>
+      </div>
+
+      <form class="card" id="form" novalidate>
+        <div class="field"><label for="nome">Nome</label><input type="text" id="nome" autocomplete="name" maxlength="80" required></div>
+        <div class="row2">
+          <div class="field"><label for="tel">Telefone / WhatsApp</label><input type="tel" id="tel" autocomplete="tel" inputmode="tel" placeholder="(41) 90000-0000" required></div>
+          <div class="field"><label for="email">E-mail <span style="font-weight:400;color:var(--text-muted)">(opcional)</span></label><input type="email" id="email" autocomplete="email" maxlength="120"></div>
+        </div>
+        <div class="field"><label for="oc">Ocasião</label>
+          <select id="oc"><option>Casual</option><option>Aniversário</option><option>Encontro</option><option>Em família</option><option>Reunião de amigos</option><option>Outro</option></select>
+        </div>
+        <div class="field"><label for="obs">Observações <span style="font-weight:400;color:var(--text-muted)">(opcional)</span></label><textarea id="obs" maxlength="300" placeholder="Cadeirinha de bebê, alergias, comemoração…"></textarea></div>
+        <button class="btn btn-primary" id="submit" type="submit" disabled>Escolha um horário</button>
+      </form>
+
+      <details class="card" id="lookup">
+        <summary style="cursor:pointer;font-weight:600">Já tenho uma reserva</summary>
+        <p class="hint" style="margin:10px 0 14px">Informe o código e o telefone usado na reserva para consultar ou cancelar.</p>
+        <div class="notice err" id="lkErr" hidden></div>
+        <div class="row2">
+          <div class="field"><label for="lkCod">Código</label><input type="text" id="lkCod" maxlength="8" autocapitalize="characters"></div>
+          <div class="field"><label for="lkTel">Telefone</label><input type="tel" id="lkTel" inputmode="tel"></div>
+        </div>
+        <button class="btn btn-secondary" id="lkBtn" type="button">Consultar</button>
+      </details>
+    </section>
+
+    <section id="vTicket" hidden>
+      <div class="ticket">
+        <div class="ticket-top"><div class="label">CÓDIGO DA RESERVA</div><div class="big" id="tCod">-----</div></div>
+        <div class="ticket-body">
+          <div class="trow"><span class="k">Nome</span><span class="v" id="tNome"></span></div>
+          <div class="trow"><span class="k">Data</span><span class="v" id="tData"></span></div>
+          <div class="trow"><span class="k">Horário</span><span class="v" id="tHora"></span></div>
+          <div class="trow"><span class="k">Pessoas</span><span class="v" id="tPessoas"></span></div>
+          <div class="trow"><span class="k">Situação</span><span class="v" id="tStatus"></span></div>
+        </div>
+      </div>
+      <div class="zigzag"></div>
+      <div class="live" id="tMsg"></div>
+      <div class="actions">
+        <button class="btn btn-gold" id="btnIcs">Adicionar ao calendário</button>
+        <a class="btn btn-secondary" id="btnWa" href="#" target="_blank" rel="noopener" hidden>Falar com o restaurante</a>
+        <button class="btn btn-danger" id="btnCancel">Cancelar reserva</button>
+        <button class="btn btn-secondary" id="btnBack">Fazer outra reserva</button>
+      </div>
+    </section>
+  </main>
+  <footer>Drive In Burger — desde 1978</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/reservas.js"></script>
+</body>
+</html>
