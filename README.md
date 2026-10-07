@@ -41,12 +41,23 @@ confirmação automática (ou manual, se preferir), consulta/cancelamento por c�
 (o cliente lê e volta a acompanhar a posição no celular), marcar/tirar prioridade, chamar / sentar em mesa / não veio,
 WhatsApp com mensagem pronta,
 fila aberta/fechada, bloqueio de dias e horários com justificativa, reservas por dia (confirmar, chegou, sentar, finalizar, não compareceu, cancelar, destaque de atrasadas),
-reserva por telefone, mapa de mesas com status (livre, ocupada, reservada, limpeza), relatórios por período (hoje, 7, 30 ou 90 dias)
-com espera média, desistência, no-show, fila e reservas por dia/semana e **como os clientes conheceram o Drive**
-(ranking dos canais, fila e reservas juntas, e o que escreveram em "Outros"), e ajustes.
+reserva por telefone, mapa de mesas com status (livre, ocupada, reservada, limpeza), painel de relatórios estilo B.I. (veja abaixo) e ajustes.
 
 **Alocação automática de mesas:** cada reserva já nasce com a menor mesa que comporta o grupo e não tem conflito de
 horário — isso evita overbooking.
+
+## Relatórios (painel B.I.)
+
+Aba **Relatórios**, com gráficos que **atualizam sozinhos** (a cada entrada/saída da fila, reserva nova ou mudança de status, e a cada 30 segundos).
+Filtros no topo: **Hoje, 7 dias, 30 dias, 90 dias, 12 meses**, **Dia específico** (escolha uma data) ou período **De/Até**.
+
+- **Tempo de espera na fila:** espera média, maior espera (com a senha e o dia), mediana, grupos atendidos, desistência e "esperando agora" (ao vivo).
+  Gráficos de média e maior espera **por número de pessoas**, **por dia da semana** e **por horário de entrada**.
+  Espera = da entrada na fila até a mesa ser chamada (ou sentada, se não houve chamada).
+- **Como conheceram o Drive:** gráfico de **pizza** com legenda (total, %, fila/reservas), filtro Fila + reservas / Só fila / Só reservas
+  e o que escreveram em "Outros".
+- **Reservas:** total de pessoas (colunas) e **média de pessoas por reserva** (linha) **por dia da semana**, **por semana** e **por mês**,
+  mais a distribuição por tamanho do grupo. Considera a data da reserva e não conta as canceladas.
 
 ## Turnos (almoço e jantar) e bloqueios
 

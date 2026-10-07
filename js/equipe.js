@@ -477,8 +477,14 @@
     });
   }
 
-  // ------------------------------------------------------------ RELATÓRIOS
-  var relSeq = 0;
+  // ------------------------------------------------------------ RELATÓRIOS (painel B.I., ao vivo)
+  var relSeq = 0, relCache = {}, relHtmlLast = "", relPreset = 7, relIni = "", relFim = "", relFonte = "todos";
+  var REL_PRESETS = [[1, "Hoje"], [7, "7 dias"], [30, "30 dias"], [90, "90 dias"], [365, "12 meses"]];
+  var DIAS_SEM = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+  var MESES_ABR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  var ORIGENS_LISTA = ["Indicação de amigos/familiares", "Passando em frente ao Drive", "Google", "Redes Sociais", "Prêmio Bom Gourmet", "Outros"];
+  var ORIGEM_COR = { "Indicação de amigos/familiares": "var(--red)", "Passando em frente ao Drive": "var(--gold)", "Google": "#2f6f8f", "Redes Sociais": "var(--success)", "Prêmio Bom Gourmet": "#b07aa1", "Outros": "#8c8c8c", "Não informado": "#cdbfa6" };
+
   async function fetchAll(table, cols, apply) {
     var out = [], from = 0, step = 1000;
     for (;;) {
@@ -489,91 +495,218 @@
     }
     return out;
   }
-  var ORIGENS_LISTA = ["Indicação de amigos/familiares", "Passando em frente ao Drive", "Google", "Redes Sociais", "Prêmio Bom Gourmet", "Outros"];
+  // dias passados ficam em cache por 2 min; hoje (e datas futuras) é sempre buscado na hora
+  async function fetchRel(table, dateCol, cols, ini, fim) {
+    var out = [], ontem = D.addDays(S.hoje, -1);
+    if (ini <= ontem) {
+      var b = fim < ontem ? fim : ontem, key = table + "|" + ini + "|" + b, c = relCache[key];
+      if (!c || Date.now() - c.t > 120000) {
+        c = { t: Date.now(), rows: await fetchAll(table, cols, function (q) { return q.gte(dateCol, ini).lte(dateCol, b).order("created_at"); }) };
+        var keys = Object.keys(relCache); if (keys.length > 12) delete relCache[keys[0]];
+        relCache[key] = c;
+      }
+      out = out.concat(c.rows);
+    }
+    if (fim >= S.hoje) {
+      var a2 = ini > S.hoje ? ini : S.hoje;
+      out = out.concat(await fetchAll(table, cols, function (q) { return q.gte(dateCol, a2).lte(dateCol, fim).order("created_at"); }));
+    }
+    return out;
+  }
+
   function normOrigem(v) {
     v = String(v || "").trim();
     if (!v || v === "Não informado") return "Não informado";
-    return ORIGENS_LISTA.indexOf(v) >= 0 ? v : "Outros";   // "Outros: texto" e valores inesperados entram em "Outros"
+    return ORIGENS_LISTA.indexOf(v) >= 0 ? v : "Outros";
   }
-  var REL_PERIODOS = [[1, "Hoje"], [7, "7 dias"], [30, "30 dias"], [90, "90 dias"]];
+  function wdIdx(dateStr) { return (new Date(dateStr + "T12:00:00").getDay() + 6) % 7; }   // 0 = segunda
+  function mondayOf(dateStr) { return D.addDays(dateStr, -wdIdx(dateStr)); }
+  var hourFmt = null;
+  function horaLocal(ts) {
+    if (!hourFmt) hourFmt = new Intl.DateTimeFormat("en-GB", { timeZone: S.cfg.fuso, hour: "2-digit", hour12: false });
+    var h = parseInt(hourFmt.format(new Date(ts)), 10); return h === 24 ? 0 : h;
+  }
+  function fmtMin(v) {
+    if (v == null || isNaN(v)) return "—";
+    var m = Math.round(v); if (m < 60) return m + " min";
+    return Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0");
+  }
+  function fmtLbl(v) { if (v >= 60) return Math.floor(v / 60) + "h" + String(Math.round(v % 60)).padStart(2, "0"); return String(Math.round(v)); }   // rótulo curto da coluna
+  function r1(v) { return v == null ? null : Math.round(v * 10) / 10; }
+
+  function relRange() { return relPreset ? [D.addDays(S.hoje, -(relPreset - 1)), S.hoje] : [relIni, relFim]; }
+
+  function relBarHtml() {
+    return '<div class="toolbar" id="relPresets">' + REL_PRESETS.map(function (p) { return '<button class="btn btn-sm btn-secondary" data-per="' + p[0] + '">' + p[1] + "</button>"; }).join("") +
+      '<span class="grow"></span><span class="live"><i class="dot"></i><span id="relLiveTxt">ao vivo</span></span></div>' +
+      '<div class="toolbar relfilt"><label>Dia específico <input type="date" id="relDia"></label><label>De <input type="date" id="relDe"></label><label>Até <input type="date" id="relAte"></label><span class="hint" id="relRangeTxt" style="margin:0"></span></div>';
+  }
+  function syncRelBar() {
+    var rg = relRange(), ini = rg[0], fim = rg[1];
+    document.querySelectorAll("#relPresets [data-per]").forEach(function (b) {
+      var on = relPreset === parseInt(b.getAttribute("data-per"), 10);
+      b.className = "btn btn-sm " + (on ? "btn-primary" : "btn-secondary");
+    });
+    function setv(id, v) { var el = $(id); if (el && document.activeElement !== el) el.value = v; }
+    setv("relDia", ini === fim ? ini : ""); setv("relDe", ini); setv("relAte", fim);
+    var dias = Math.round((new Date(fim + "T12:00:00") - new Date(ini + "T12:00:00")) / 86400000) + 1;
+    $("relRangeTxt").textContent = ini === fim ? "Dia " + D.fmtDate(ini) + " (" + D.weekday(ini) + ")" : D.fmtDate(ini) + " a " + D.fmtDate(fim) + " · " + dias + " dias";
+  }
+  function bindRelBar() {
+    document.querySelectorAll("#relPresets [data-per]").forEach(function (b) {
+      b.onclick = function () { relPreset = parseInt(b.getAttribute("data-per"), 10); relIni = relFim = ""; relHtmlLast = ""; renderRel(); };
+    });
+    $("relDia").onchange = function () { if (!this.value) return; relPreset = null; relIni = relFim = this.value; relHtmlLast = ""; renderRel(); };
+    function custom() {
+      var de = $("relDe").value, ate = $("relAte").value;
+      if (!de && !ate) return; if (!de) de = ate; if (!ate) ate = de;
+      if (de > ate) { D.toast("A data inicial deve ser anterior à final.", true); return; }
+      relPreset = null; relIni = de; relFim = ate; relHtmlLast = ""; renderRel();
+    }
+    $("relDe").onchange = custom; $("relAte").onchange = custom;
+  }
 
   async function renderRel() {
     var id = ++relSeq;
-    $("pane").innerHTML = '<div class="empty">Calculando…</div>';
+    if (!$("relBody")) { $("pane").innerHTML = relBarHtml() + '<div id="relBody"><div class="empty">Calculando…</div></div>'; bindRelBar(); relHtmlLast = ""; }
+    syncRelBar();
     try {
-      var n = S.relDias || 7, ini = D.addDays(S.hoje, -(n - 1));
-      var f = await fetchAll("fila", "dia,status,created_at,sentado_em,pessoas,como_conheceu", function (q) { return q.gte("dia", ini).order("created_at"); });
-      var r = await fetchAll("reservas", "data,status,pessoas,origem,como_conheceu,created_at", function (q) { return q.gte("data", ini).lte("data", S.hoje).order("created_at"); });
-      if (id !== relSeq || S.tab !== "rel") return;
-
-      // ---- números gerais
-      var sent = f.filter(function (x) { return x.status === "sentado" && x.sentado_em; });
-      var media = sent.length ? Math.round(sent.reduce(function (s, x) { return s + (new Date(x.sentado_em) - new Date(x.created_at)) / 60000; }, 0) / sent.length) : null;
-      var desist = f.filter(function (x) { return x.status === "cancelado" || x.status === "nao_compareceu"; }).length;
-      var comparec = r.filter(function (x) { return ["chegou", "sentada", "concluida"].indexOf(x.status) >= 0; }).length;
-      var nos = r.filter(function (x) { return x.status === "nao_compareceu"; }).length;
-      var cancel = r.filter(function (x) { return x.status === "cancelada"; }).length;
-      var taxaNo = comparec + nos ? Math.round(nos * 100 / (comparec + nos)) : null;
-
-      // ---- barras por dia (até 7 dias) ou por semana
-      var size = n <= 7 ? 1 : 7, buckets = [];
-      for (var i = 0; i < n; i += size) buckets.push([D.addDays(ini, i), D.addDays(ini, Math.min(i + size, n) - 1)]);
-      function inB(v, b) { return v >= b[0] && v <= b[1]; }
-      function lab(b) { var a = b[0].slice(8) + "/" + b[0].slice(5, 7); return size === 1 ? a : a + " a " + b[1].slice(8) + "/" + b[1].slice(5, 7); }
-      var fB = buckets.map(function (b) { return f.filter(function (x) { return inB(x.dia, b); }).length; });
-      var rB = buckets.map(function (b) { return r.filter(function (x) { return inB(x.data, b) && x.status !== "cancelada"; }).length; });
-      function bars(vals) {
-        var mx = Math.max.apply(null, vals.concat([1]));
-        return '<div class="bars">' + buckets.map(function (b, i) {
-          return '<div class="bar-row" style="grid-template-columns:' + (size === 1 ? 70 : 120) + 'px 1fr 40px"><span>' + lab(b) + '</span><div class="bar"><i style="width:' + Math.round(vals[i] * 100 / mx) + '%"></i></div><b>' + vals[i] + "</b></div>";
-        }).join("") + "</div>";
+      var rg = relRange(), ini = rg[0], fim = rg[1];
+      var f = await fetchRel("fila", "dia", "dia,pager,status,created_at,chamado_em,sentado_em,pessoas,como_conheceu", ini, fim);
+      var r = await fetchRel("reservas", "data", "data,hora,status,pessoas,como_conheceu,created_at", ini, fim);
+      if (id !== relSeq || S.tab !== "rel" || !$("relBody")) return;
+      var html = relBody(f, r, ini, fim);
+      if (html !== relHtmlLast) {
+        $("relBody").innerHTML = html; relHtmlLast = html;
+        $("relBody").querySelectorAll("[data-fonte]").forEach(function (b) { b.onclick = function () { relFonte = b.getAttribute("data-fonte"); relHtmlLast = ""; renderRel(); }; });
       }
+      $("relLiveTxt").textContent = "ao vivo · atualizado " + new Date().toLocaleTimeString("pt-BR");
+    } catch (e) { if ($("relBody")) $("relBody").innerHTML = '<div class="notice err">' + esc(e.message) + "</div>"; }
+  }
 
-      // ---- como conheceu o Drive
-      var ORIGENS = ORIGENS_LISTA;
-      var cont = {}; ORIGENS.concat(["Não informado"]).forEach(function (k) { cont[k] = { fila: 0, res: 0 }; });
-      var outrosTxt = {};
-      function conta(v, tipo) {
-        var k = normOrigem(v); if (!cont[k]) cont[k] = { fila: 0, res: 0 };
-        cont[k][tipo]++;
-        if (k === "Outros" && String(v).indexOf("Outros:") === 0) {
-          var t = String(v).slice(7).trim(), key = t.toLowerCase(); if (t) outrosTxt[key] = outrosTxt[key] || { t: t, n: 0 }, outrosTxt[key].n++;
-        }
-      }
-      f.forEach(function (x) { conta(x.como_conheceu, "fila"); });
-      r.forEach(function (x) { conta(x.como_conheceu, "res"); });
-      var tot = function (k) { return cont[k].fila + cont[k].res; };
-      var informados = ORIGENS.reduce(function (s, k) { return s + tot(k); }, 0);
-      var ranking = ORIGENS.slice().sort(function (a, b) { return tot(b) - tot(a); });
-      var topo = informados && tot(ranking[0]) ? ranking[0] : null;
-      var maxO = Math.max(tot(ranking[0]), 1);
-      var origHtml = ranking.map(function (k) {
-        var t = tot(k), pct = informados ? Math.round(t * 100 / informados) : 0;
-        return '<div class="orig-row"><div class="orig-top"><b>' + esc(k) + "</b><span>" + t + " · " + pct + '% <small>fila ' + cont[k].fila + " · reservas " + cont[k].res + '</small></span></div><div class="bar"><i style="width:' + Math.round(t * 100 / maxO) + '%"></i></div></div>';
-      }).join("");
-      var outrosList = Object.keys(outrosTxt).map(function (k) { return outrosTxt[k]; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 10);
-      var semInfo = tot("Não informado"), totalClientes = informados + semInfo;
+  function relBody(f, r, ini, fim) {
+    var C = window.DIBCharts, num = C.num;
+    var asc = function (a, b) { return a - b; };
+    var rangeTxt = ini === fim ? "dia " + D.fmtDate(ini) : D.fmtDate(ini) + " a " + D.fmtDate(fim);
 
-      var perHtml = REL_PERIODOS.map(function (p) { return '<button class="btn btn-sm ' + (p[0] === n ? "btn-primary" : "btn-secondary") + '" data-per="' + p[0] + '">' + p[1] + "</button>"; }).join("");
-      $("pane").innerHTML =
-        '<div class="toolbar"><div class="daynav">' + perHtml + '</div><span class="grow"></span><span class="hint" style="margin:0">' + D.fmtDate(ini) + " a " + D.fmtDate(S.hoje) + "</span></div>" +
-        '<div class="stats">' +
-        '<div class="stat"><div class="n">' + f.length + '</div><div class="l">entradas na fila</div></div>' +
-        '<div class="stat"><div class="n">' + (media === null ? "—" : media + " min") + '</div><div class="l">espera média até sentar</div></div>' +
-        '<div class="stat"><div class="n">' + (f.length ? Math.round(desist * 100 / f.length) + "%" : "—") + '</div><div class="l">desistência na fila</div></div>' +
-        '<div class="stat"><div class="n">' + r.length + '</div><div class="l">reservas feitas</div></div>' +
-        '<div class="stat"><div class="n">' + (taxaNo === null ? "—" : taxaNo + "%") + '</div><div class="l">no-show das reservas</div></div>' +
-        '<div class="stat"><div class="n">' + cancel + '</div><div class="l">reservas canceladas</div></div></div>' +
-        '<div class="card"><h3 style="font-size:17px;margin-bottom:4px">Como os clientes conheceram o Drive</h3>' +
-        '<p class="hint" style="margin:0 0 14px">Fila e reservas juntas. ' + (topo ? "Canal que mais traz clientes: <b>" + esc(topo) + "</b>. " : "") +
-        (totalClientes ? semInfo + " de " + totalClientes + " não responderam (" + Math.round(semInfo * 100 / totalClientes) + "%); os percentuais consideram só quem respondeu." : "Sem registros no período.") + "</p>" +
-        (informados ? origHtml : '<div class="empty" style="padding:16px">Ninguém respondeu neste período.</div>') +
-        (outrosList.length ? '<div class="section-t">O que escreveram em "Outros"</div>' + outrosList.map(function (o) { return '<div class="trow"><span class="k">' + esc(o.t) + '</span><span class="v">' + o.n + "</span></div>"; }).join("") : "") + "</div>" +
-        '<div class="card"><h3 style="font-size:17px;margin-bottom:12px">Fila ' + (size === 1 ? "por dia" : "por semana") + "</h3>" + bars(fB) + "</div>" +
-        '<div class="card"><h3 style="font-size:17px;margin-bottom:12px">Reservas ' + (size === 1 ? "por dia" : "por semana") + "</h3>" + bars(rB) + "</div>";
+    // ---------- espera: da entrada na fila até a mesa ser chamada (ou sentada, se não foi chamada)
+    var ws = f.map(function (x) {
+      var t = x.chamado_em || x.sentado_em; if (!t) return null;
+      var m = (new Date(t) - new Date(x.created_at)) / 60000;
+      return m >= 0 && isFinite(m) ? { f: x, m: m } : null;
+    }).filter(Boolean);
+    function st(a) {
+      if (!a.length) return { n: 0, avg: null, max: null, med: null };
+      var v = a.map(function (x) { return x.m; }).sort(asc), sum = v.reduce(function (s, x) { return s + x; }, 0), k = v.length;
+      return { n: k, avg: sum / k, max: v[k - 1], med: k % 2 ? v[(k - 1) / 2] : (v[k / 2 - 1] + v[k / 2]) / 2 };
+    }
+    function group(count, keyFn) {
+      var g = []; for (var i = 0; i < count; i++) g.push([]);
+      ws.forEach(function (x) { var k = keyFn(x); if (k >= 0 && k < count) g[k].push(x); });
+      return g.map(st);
+    }
+    var all = st(ws), maior = ws.reduce(function (b, x) { return !b || x.m > b.m ? x : b; }, null);
+    var desist = f.filter(function (x) { return x.status === "cancelado" || x.status === "nao_compareceu"; }).length;
+    var aguard = S.fila.filter(function (x) { return x.status === "aguardando"; });
+    var maiorAgora = aguard.reduce(function (m, x) { return Math.max(m, minsSince(x.created_at)); }, 0);
 
-      $("pane").querySelectorAll("[data-per]").forEach(function (b) { b.onclick = function () { S.relDias = parseInt(b.getAttribute("data-per"), 10); renderRel(); }; });
-    } catch (e) { $("pane").innerHTML = '<div class="notice err">' + esc(e.message) + "</div>"; }
+    var gP = group(7, function (x) { return Math.min(x.f.pessoas, 7) - 1; });
+    var gD = group(7, function (x) { return wdIdx(x.f.dia); });
+    var hrs = ws.map(function (x) { return horaLocal(x.f.created_at); });
+    var hMin = Math.min.apply(null, hrs.concat([11])), hMax = Math.max.apply(null, hrs.concat([22]));
+    var hLab = [], hIdx = {};
+    for (var h = hMin; h <= hMax; h++) { hIdx[h] = hLab.length; hLab.push(h + "h"); }
+    var gH = group(hLab.length, function (x) { return hIdx[horaLocal(x.f.created_at)]; });
+
+    function waitSeries(g) {
+      return [{ name: "Média", values: g.map(function (x) { return r1(x.avg) || 0; }), kind: "bar", color: "var(--red)", fmt: fmtLbl },
+              { name: "Maior", values: g.map(function (x) { return r1(x.max) || 0; }), kind: "bar", color: "var(--gold)", fmt: fmtLbl }];
+    }
+    function waitTip(labels, g, suf) { return function (i) { return labels[i] + suf + ": " + (g[i].n ? "média " + fmtMin(g[i].avg) + " · maior " + fmtMin(g[i].max) + " · " + g[i].n + " grupo(s)" : "sem atendimentos"); }; }
+    var lblP = ["1", "2", "3", "4", "5", "6", "7+"];
+    var sP = waitSeries(gP), sD = waitSeries(gD);
+    var sH = [{ name: "Grupos atendidos", values: gH.map(function (x) { return x.n; }), kind: "bar", axis: "r", color: "var(--border)" },
+              { name: "Média", values: gH.map(function (x) { return x.n ? r1(x.avg) : null; }), kind: "line", color: "var(--red)" },
+              { name: "Maior", values: gH.map(function (x) { return x.n ? r1(x.max) : null; }), kind: "line", color: "var(--gold)" }];
+
+    function card(title, sub, inner, cls) { return '<div class="card bi-card ' + (cls || "") + '"><h3>' + title + "</h3>" + (sub ? '<p class="hint" style="margin:2px 0 10px">' + sub + "</p>" : "") + inner + "</div>"; }
+    function stat(n, l) { return '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + "</div></div>"; }
+
+    var html = '<h3 class="bi-h">Tempo de espera na fila</h3><p class="hint" style="margin:-4px 0 12px">Espera = da entrada na fila até a mesa ser chamada (ou sentada, se não houve chamada). Período: ' + rangeTxt + ".</p>" +
+      '<div class="stats">' +
+      stat(fmtMin(all.avg), "espera média") +
+      stat(fmtMin(all.max), "maior espera" + (maior ? " (senha " + String(maior.f.pager).padStart(3, "0") + ", " + D.fmtDate(maior.f.dia).slice(0, 5) + ")" : "")) +
+      stat(fmtMin(all.med), "mediana") +
+      stat(all.n, "grupos atendidos") +
+      stat(f.length ? Math.round(desist * 100 / f.length) + "%" : "—", "desistência (" + desist + " de " + f.length + ")") +
+      stat(aguard.length + ' <small style="font-size:14px;color:var(--text-muted)">· maior ' + fmtMin(maiorAgora) + "</small>", "esperando agora (ao vivo)") +
+      "</div>" +
+      '<div class="bi-grid">' +
+      card("Espera por número de pessoas", "Média e maior espera por tamanho do grupo (minutos)", C.legend(sP) + C.bars({ labels: lblP, series: sP, yTitle: "minutos", valueLabels: true, tip: waitTip(lblP, gP, " pessoa(s)"), aria: "Espera por número de pessoas" })) +
+      card("Espera por dia da semana", "Média e maior espera (minutos)", C.legend(sD) + C.bars({ labels: DIAS_SEM, series: sD, yTitle: "minutos", valueLabels: true, tip: waitTip(DIAS_SEM, gD, ""), aria: "Espera por dia da semana" })) +
+      card("Espera por horário de entrada", "Linhas: média e maior espera (min) · Colunas: grupos atendidos", C.legend(sH) + C.bars({ labels: hLab, series: sH, yTitle: "minutos", y2Title: "grupos", intR: true, tip: waitTip(hLab, gH, ""), aria: "Espera por horário" }), "wide") +
+      "</div>";
+
+    // ---------- como conheceram o Drive (pizza)
+    var cont = {}; ORIGENS_LISTA.concat(["Não informado"]).forEach(function (k) { cont[k] = { fila: 0, res: 0 }; });
+    var outrosTxt = {};
+    function conta(v, tipo) {
+      var k = normOrigem(v); cont[k][tipo]++;
+      if (k === "Outros" && String(v).indexOf("Outros:") === 0) { var t = String(v).slice(7).trim(), key = t.toLowerCase(); if (t) { outrosTxt[key] = outrosTxt[key] || { t: t, n: 0 }; outrosTxt[key].n++; } }
+    }
+    if (relFonte !== "reservas") f.forEach(function (x) { conta(x.como_conheceu, "fila"); });
+    if (relFonte !== "fila") r.forEach(function (x) { conta(x.como_conheceu, "res"); });
+    var cats = ORIGENS_LISTA.concat(["Não informado"]);
+    var tot = function (k) { return cont[k].fila + cont[k].res; };
+    var totalGeral = cats.reduce(function (s, k) { return s + tot(k); }, 0);
+    var informados = totalGeral - tot("Não informado");
+    var ranking = cats.slice().sort(function (a, b) { return tot(b) - tot(a); });
+    var topo = ORIGENS_LISTA.slice().sort(function (a, b) { return tot(b) - tot(a); })[0];
+    var fontes = [["todos", "Fila + reservas"], ["fila", "Só fila"], ["reservas", "Só reservas"]];
+    var fontesHtml = '<div class="toolbar" style="margin-bottom:10px">' + fontes.map(function (x) { return '<button class="btn btn-sm ' + (relFonte === x[0] ? "btn-primary" : "btn-secondary") + '" data-fonte="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>";
+    var tabela = ranking.filter(function (k) { return tot(k) > 0; }).map(function (k) {
+      var t = tot(k), pct = totalGeral ? Math.round(t * 100 / totalGeral) : 0;
+      return '<div class="orig-row"><div class="orig-top"><span><i class="sq" style="background:' + ORIGEM_COR[k] + '"></i><b>' + esc(k) + "</b></span><span>" + t + " · " + pct + '% <small>fila ' + cont[k].fila + " · reservas " + cont[k].res + "</small></span></div></div>";
+    }).join("");
+    var outrosList = Object.keys(outrosTxt).map(function (k) { return outrosTxt[k]; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 8);
+    html += '<h3 class="bi-h">Como os clientes conheceram o Drive</h3>' +
+      card("Origem dos clientes", (topo && tot(topo) ? "Canal que mais traz clientes: <b>" + esc(topo) + "</b>. " : "") + (totalGeral ? tot("Não informado") + " de " + totalGeral + " não responderam." : "Sem registros no período."),
+        fontesHtml + '<div class="pie-wrap"><div class="pie-box">' + C.pie({ aria: "Como os clientes conheceram o Drive", items: cats.map(function (k) { return { label: k, value: tot(k), color: ORIGEM_COR[k] }; }) }) + '</div><div class="pie-legend">' + (tabela || "") +
+        (outrosList.length ? '<div class="section-t" style="margin:12px 0 6px">O que escreveram em "Outros"</div>' + outrosList.map(function (o) { return '<div class="trow"><span class="k">' + esc(o.t) + '</span><span class="v">' + o.n + "</span></div>"; }).join("") : "") + "</div></div>", "wide");
+
+    // ---------- reservas
+    var rv = r.filter(function (x) { return x.status !== "cancelada"; });
+    function rst(list) { var p = list.reduce(function (s, x) { return s + x.pessoas; }, 0); return { n: list.length, p: p, avg: list.length ? p / list.length : null }; }
+    function rgroup(count, keyFn) { var g = []; for (var i = 0; i < count; i++) g.push([]); rv.forEach(function (x) { var k = keyFn(x); if (k >= 0 && k < count) g[k].push(x); }); return g.map(rst); }
+    var rAll = rst(rv), cancel = r.length - rv.length;
+    var comp = r.filter(function (x) { return ["chegou", "sentada", "concluida"].indexOf(x.status) >= 0; }).length, nos = r.filter(function (x) { return x.status === "nao_compareceu"; }).length;
+    var rD = rgroup(7, function (x) { return wdIdx(x.data); });
+    var wk = [], wIdx = {}; for (var w0 = mondayOf(ini); w0 <= fim; w0 = D.addDays(w0, 7)) { wIdx[w0] = wk.length; wk.push(w0); }
+    var rW = rgroup(wk.length, function (x) { return wIdx[mondayOf(x.data)]; });
+    var mo = [], mIdx = {}; for (var ym = ini.slice(0, 7); ym <= fim.slice(0, 7);) { mIdx[ym] = mo.length; mo.push(ym); var yy = parseInt(ym.slice(0, 4), 10), mm = parseInt(ym.slice(5, 7), 10); mm++; if (mm > 12) { mm = 1; yy++; } ym = yy + "-" + String(mm).padStart(2, "0"); }
+    var rM = rgroup(mo.length, function (x) { return mIdx[x.data.slice(0, 7)]; });
+    var rS = rgroup(8, function (x) { return Math.min(x.pessoas, 8) - 1; });
+    var lblW = wk.map(function (d) { return d.slice(8) + "/" + d.slice(5, 7); }), lblM = mo.map(function (k) { return MESES_ABR[parseInt(k.slice(5, 7), 10) - 1] + "/" + k.slice(2, 4); });
+    var lblS = ["1", "2", "3", "4", "5", "6", "7", "8+"];
+    function resSeries(g) {
+      return [{ name: "Pessoas reservadas (total)", values: g.map(function (x) { return x.p; }), kind: "bar", color: "var(--red)", fmt: function (v) { return num(v, 0); } },
+              { name: "Média de pessoas por reserva", values: g.map(function (x) { return x.n ? r1(x.avg) : null; }), kind: "line", axis: "r", color: "var(--gold)", fmt: function (v) { return num(v); } }];
+    }
+    function resTip(labels, g, pre) { return function (i) { return (pre || "") + labels[i] + ": " + (g[i].n ? g[i].n + " reserva(s) · " + g[i].p + " pessoas · média " + num(g[i].avg) + " por reserva" : "sem reservas"); }; }
+    var sRD = resSeries(rD), sRW = resSeries(rW), sRM = resSeries(rM);
+    var sRS = [{ name: "Reservas", values: rS.map(function (x) { return x.n; }), kind: "bar", color: "var(--red)" }];
+    var cr = function (title, sub, labels, series, g, ttl, wide) { return card(title, sub, C.legend(series) + C.bars({ labels: labels, series: series, yTitle: "pessoas", y2Title: "média", intL: true, tip: resTip(labels, g, ttl || ""), aria: title }), wide); };
+
+    html += '<h3 class="bi-h">Reservas</h3><p class="hint" style="margin:-4px 0 12px">Considera a data da reserva, sem as canceladas. Período: ' + rangeTxt + ".</p>" +
+      '<div class="stats">' + stat(rAll.n, "reservas") + stat(rAll.p, "pessoas reservadas (total)") + stat(rAll.avg == null ? "—" : num(rAll.avg), "média de pessoas por reserva") +
+      stat(comp + nos ? Math.round(nos * 100 / (comp + nos)) + "%" : "—", "no-show (" + nos + ")") + stat(cancel, "reservas canceladas") + "</div>" +
+      '<div class="bi-grid">' +
+      cr("Por dia da semana", "Colunas: total de pessoas · Linha: média de pessoas por reserva", DIAS_SEM, sRD, rD) +
+      card("Por tamanho do grupo", "Quantidade de reservas por número de pessoas", C.bars({ labels: lblS, series: sRS, yTitle: "reservas", intL: true, valueLabels: true, tip: function (i) { return lblS[i] + " pessoa(s): " + rS[i].n + " reserva(s)"; }, aria: "Reservas por tamanho do grupo" })) +
+      cr("Por semana", "Semanas iniciadas na segunda-feira (dd/mm)", lblW, sRW, rW, "Semana de ", "wide") +
+      cr("Por mês", "Total de pessoas e média por reserva em cada mês", lblM, sRM, rM, "", "wide") +
+      "</div>";
+    return html;
   }
 
   // ------------------------------------------------------------ BLOQUEIOS
