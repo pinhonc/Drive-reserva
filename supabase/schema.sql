@@ -41,11 +41,15 @@ create table if not exists public.settings (
   confirmar_automatico         boolean not null default true,
   tolerancia_atraso_min        int     not null default 15  check (tolerancia_atraso_min between 0 and 120),
   whatsapp                     text    not null default '',
-  -- chave = dia da semana (0 = domingo ... 6 = sábado); valor = lista de [abre, fecha]
+  -- chave = dia da semana (0 = domingo ... 6 = sábado); valor = lista de turnos [abre, fecha, 'almoco'|'jantar']
   horarios                     jsonb   not null default '{
-    "0":[["11:00","23:00"]],"1":[["11:00","23:00"]],"2":[["11:00","23:00"]],
-    "3":[["11:00","23:00"]],"4":[["11:00","23:00"]],"5":[["11:00","23:00"]],
-    "6":[["11:00","23:00"]]}'::jsonb
+    "0":[["11:00","15:00","almoco"],["18:00","23:00","jantar"]],
+    "1":[["11:00","15:00","almoco"],["18:00","23:00","jantar"]],
+    "2":[["11:00","15:00","almoco"],["18:00","23:00","jantar"]],
+    "3":[["11:00","15:00","almoco"],["18:00","23:00","jantar"]],
+    "4":[["11:00","15:00","almoco"],["18:00","23:00","jantar"]],
+    "5":[["11:00","15:00","almoco"],["18:00","23:00","jantar"]],
+    "6":[["11:00","15:00","almoco"],["18:00","23:00","jantar"]]}'::jsonb
 );
 insert into public.settings (id) values (1) on conflict (id) do nothing;
 
@@ -158,6 +162,29 @@ alter table public.fila drop constraint if exists fila_pager_fisico_check;
 alter table public.fila add constraint fila_pager_fisico_check check (pager_fisico is null or char_length(pager_fisico) <= 10);
 
 -- ---------------------------------------------------------------------
+-- 5c. Bloqueios de reservas (dias, turnos ou horários) — sempre com justificativa
+-- ---------------------------------------------------------------------
+create table if not exists public.bloqueios (
+  id                uuid primary key default gen_random_uuid(),
+  data_ini          date not null,
+  data_fim          date not null,
+  turno             text check (turno is null or turno in ('almoco','jantar')),   -- null = todos os turnos
+  hora_ini          time,                                                          -- horário específico (opcional)
+  hora_fim          time,
+  motivo            text not null check (char_length(trim(motivo)) between 5 and 300),
+  criado_por        uuid default auth.uid(),
+  criado_por_nome   text,
+  created_at        timestamptz not null default now(),
+  removido_em       timestamptz,                                                   -- bloqueio desfeito (o registro fica no histórico)
+  removido_por_nome text,
+  check (data_fim >= data_ini),
+  check ((hora_ini is null) = (hora_fim is null)),
+  check (hora_ini is null or hora_ini < hora_fim),
+  check (turno is null or hora_ini is null)
+);
+create index if not exists bloqueios_ativos_idx on public.bloqueios (data_ini, data_fim) where removido_em is null;
+
+-- ---------------------------------------------------------------------
 -- 6. Segurança (RLS): só a equipe lê/escreve direto nas tabelas.
 --    O público (cliente) usa apenas as funções (RPC) da seção 7.
 -- ---------------------------------------------------------------------
@@ -166,22 +193,25 @@ alter table public.settings enable row level security;
 alter table public.mesas    enable row level security;
 alter table public.fila     enable row level security;
 alter table public.reservas enable row level security;
+alter table public.bloqueios enable row level security;
 
 drop policy if exists staff_self    on public.staff;
 drop policy if exists settings_all  on public.settings;
 drop policy if exists mesas_all     on public.mesas;
 drop policy if exists fila_all      on public.fila;
 drop policy if exists reservas_all  on public.reservas;
+drop policy if exists bloqueios_all on public.bloqueios;
 
 create policy staff_self   on public.staff    for select to authenticated using (user_id = auth.uid());
 create policy settings_all on public.settings for all to authenticated using (public.is_staff()) with check (public.is_staff());
 create policy mesas_all    on public.mesas    for all to authenticated using (public.is_staff()) with check (public.is_staff());
 create policy fila_all     on public.fila     for all to authenticated using (public.is_staff()) with check (public.is_staff());
 create policy reservas_all on public.reservas for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy bloqueios_all on public.bloqueios for all to authenticated using (public.is_staff()) with check (public.is_staff());
 
-revoke all on public.staff, public.settings, public.mesas, public.fila, public.reservas from anon;
+revoke all on public.staff, public.settings, public.mesas, public.fila, public.reservas, public.bloqueios from anon;
 grant select on public.staff to authenticated;
-grant select, insert, update, delete on public.settings, public.mesas, public.fila, public.reservas to authenticated;
+grant select, insert, update, delete on public.settings, public.mesas, public.fila, public.reservas, public.bloqueios to authenticated;
 
 -- ---------------------------------------------------------------------
 -- 7. Funções internas
@@ -193,6 +223,7 @@ drop function if exists public.fila_entrar(text,text,int,text,text,boolean);
 drop function if exists public.fila_adicionar_equipe(text,text,int,text,text,boolean);
 drop function if exists public.reserva_criar(text,text,text,date,text,int,text,text,text);
 drop function if exists public.reserva_criar_equipe(text,text,text,date,text,int,text,text,text);
+drop function if exists public.reserva_disponibilidade(date,int,text);
 
 create or replace function public._agora()
 returns timestamp
@@ -290,6 +321,7 @@ declare
   cod    text;
   st     text;
   ok     boolean;
+  bl     boolean;
   futuras int;
   i      int;
   novo   public.reservas%rowtype;
@@ -310,9 +342,12 @@ begin
   perform pg_advisory_xact_lock(hashtext('dib_reservas'));
 
   if p_origem = 'online' then
-    select d.disponivel into ok
+    select d.disponivel, d.bloqueado into ok, bl
       from public.reserva_disponibilidade(p_data, p_pessoas, coalesce(p_area,'Sem preferência')) d
      where d.hora = to_char(ini, 'HH24:MI');
+    if coalesce(bl, false) then
+      raise exception 'Não estamos aceitando reservas neste horário. Escolha outro.';
+    end if;
     if not coalesce(ok, false) then
       raise exception 'Este horário não está mais disponível. Escolha outro horário.';
     end if;
@@ -441,7 +476,7 @@ end $$;
 
 -- RESERVAS -----------------------------------------------------------
 create or replace function public.reserva_disponibilidade(p_data date, p_pessoas int, p_area text default 'Sem preferência')
-returns table (hora text, disponivel boolean)
+returns table (hora text, turno text, disponivel boolean, bloqueado boolean)
 language plpgsql stable security definer set search_path = public as $$
 declare
   s      public.settings%rowtype;
@@ -449,8 +484,10 @@ declare
   faixa  jsonb;
   abre   time;
   fecha  time;
+  tn     text;
   t      timestamp;
   limite timestamp;
+  bloq   boolean;
 begin
   select * into s from public.settings where id = 1;
   agora := public._agora();
@@ -463,11 +500,21 @@ begin
   loop
     abre   := (faixa ->> 0)::time;
     fecha  := (faixa ->> 1)::time;
+    tn     := coalesce(nullif(faixa ->> 2, ''), case when abre < time '16:00' then 'almoco' else 'jantar' end);
     t      := p_data + abre;
     limite := (p_data + fecha) - make_interval(mins => s.ultima_reserva_antes_fechar_min);
     while t <= limite loop
-      hora := to_char(t, 'HH24:MI');
-      disponivel := t >= agora + make_interval(mins => s.antecedencia_min_min)
+      bloq := exists (
+        select 1 from public.bloqueios b
+         where b.removido_em is null
+           and p_data between b.data_ini and b.data_fim
+           and ( (b.hora_ini is null and (b.turno is null or b.turno = tn))
+              or (b.hora_ini is not null and t::time >= b.hora_ini and t::time < b.hora_fim) ));
+      hora       := to_char(t, 'HH24:MI');
+      turno      := tn;
+      bloqueado  := bloq;
+      disponivel := (not bloq)
+                    and t >= agora + make_interval(mins => s.antecedencia_min_min)
                     and public._mesa_livre(t, p_pessoas, coalesce(p_area,'Sem preferência'), null) is not null;
       return next;
       t := t + make_interval(mins => s.intervalo_slot_min);
@@ -546,6 +593,7 @@ begin
     begin alter publication supabase_realtime add table public.fila;     exception when others then null; end;
     begin alter publication supabase_realtime add table public.reservas; exception when others then null; end;
     begin alter publication supabase_realtime add table public.mesas;    exception when others then null; end;
+    begin alter publication supabase_realtime add table public.bloqueios; exception when others then null; end;
   end if;
 end $$;
 

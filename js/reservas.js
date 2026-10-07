@@ -25,10 +25,18 @@
         return;
       }
       var any = rows.some(function (r) { return r.disponivel; });
-      $("slotsHint").textContent = any ? "" : "Todos os horários deste dia estão ocupados. Tente outra data ou área.";
-      box.innerHTML = rows.map(function (r) {
-        return '<button type="button" class="slot" data-h="' + r.hora + '" aria-pressed="false"' + (r.disponivel ? "" : " disabled") + ">" + r.hora + "</button>";
-      }).join("");
+      var todosBloq = rows.every(function (r) { return r.bloqueado; });
+      $("slotsHint").textContent = todosBloq ? "Não estamos aceitando reservas nesta data. Escolha outro dia."
+        : any ? "" : "Todos os horários deste dia estão ocupados. Tente outra data ou área.";
+      var NOMES = { almoco: "Almoço", jantar: "Jantar" }, ordem = ["almoco", "jantar"], html = "";
+      ordem.forEach(function (t) {
+        var g = rows.filter(function (r) { return r.turno === t; });
+        if (!g.length) return;
+        html += '<div class="slot-group"><div class="lbl">' + NOMES[t] + '</div><div class="slots">' + g.map(function (r) {
+          return '<button type="button" class="slot" data-h="' + r.hora + '" aria-pressed="false"' + (r.disponivel ? "" : " disabled") + ">" + r.hora + "</button>";
+        }).join("") + "</div></div>";
+      });
+      box.innerHTML = html;
       box.querySelectorAll(".slot").forEach(function (b) {
         b.onclick = function () {
           box.querySelectorAll(".slot").forEach(function (o) { o.setAttribute("aria-pressed", "false"); });

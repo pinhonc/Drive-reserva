@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   var D = window.DIB, $ = D.$, sb = D.sb, esc = D.esc;
-  var S = { cfg: null, hoje: "", resData: "", mesas: [], fila: [], reservas: [], reservasHoje: [], pendentes: 0, tab: "fila", edit: false, relDias: 7, channel: null };
+  var S = { cfg: null, hoje: "", resData: "", mesas: [], fila: [], reservas: [], reservasHoje: [], pendentes: 0, tab: "fila", edit: false, relDias: 7, bloqueios: [], staffNome: "", channel: null };
   var audio = null;
   var AREAS = ["Salão Principal", "Mezanino", "Kids"];
   function areaOpts(any, sel) {
@@ -64,7 +64,7 @@
   async function enter(user) {
     var r = await sb.from("staff").select("nome").eq("user_id", user.id).maybeSingle();
     if (r.error || !r.data) { show("vDenied"); return; }
-    $("who").textContent = r.data.nome || user.email;
+    $("who").textContent = r.data.nome || user.email; S.staffNome = r.data.nome || user.email;
     try {
       await loadAll(); show("vApp"); renderAll(); subscribe();
     } catch (e) { D.toast("Erro ao carregar: " + e.message, true); }
@@ -86,7 +86,8 @@
     var c = await sb.from("reservas").select("id", { count: "exact", head: true }).eq("status", "pendente").gte("data", S.hoje);
     S.pendentes = c.count || 0;
   }
-  async function loadAll() { await loadCfg(); await Promise.all([loadMesas(), loadFila(), loadReservas()]); }
+  async function loadBloqueios() { S.bloqueios = must(await sb.from("bloqueios").select("*").order("data_ini", { ascending: false }).order("created_at", { ascending: false })) || []; }
+  async function loadAll() { await loadCfg(); await Promise.all([loadMesas(), loadFila(), loadReservas(), loadBloqueios()]); }
 
   function subscribe() {
     teardown();
@@ -97,12 +98,13 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "fila" }, function (p) { if (p.eventType === "INSERT") beep(); rf(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "reservas" }, function (p) { if (p.eventType === "INSERT") beep(); rr(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "mesas" }, rm)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bloqueios" }, function () { loadBloqueios().then(renderActive).catch(function () {}); })
       .subscribe();
   }
   // plano B caso o tempo real falhe + atualiza os "há X min"
   setInterval(async function () {
     if ($("vApp").hidden) return;
-    try { await Promise.all([loadFila(), loadReservas(), loadMesas()]); renderActive(); } catch (e) {}
+    try { await Promise.all([loadFila(), loadReservas(), loadMesas(), loadBloqueios()]); renderActive(); } catch (e) {}
   }, 30000);
 
   // ------------------------------------------------------------ tabs / render
@@ -120,7 +122,10 @@
     var ativos = S.fila.filter(function (f) { return f.status === "aguardando" || f.status === "chamado"; }).length;
     $("bFila").textContent = ativos;
     $("bRes").textContent = S.pendentes; $("bRes").hidden = S.pendentes === 0;
+    var nb = bloqAtivos().filter(function (b) { return b.data_fim >= S.hoje; }).length;
+    $("bBloq").textContent = nb; $("bBloq").hidden = nb === 0;
     if (S.tab === "fila") renderFila();
+    else if (S.tab === "bloqueios") renderBloqueios();
     else if (S.tab === "reservas") renderReservas();
     else if (S.tab === "mesas") renderMesas();
     else if (S.tab === "rel") renderRel();
@@ -166,7 +171,7 @@
   }
 
   async function act(fn, okMsg) {
-    try { await fn(); if (okMsg) D.toast(okMsg); await Promise.all([loadFila(), loadReservas(), loadMesas()]); renderActive(); }
+    try { await fn(); if (okMsg) D.toast(okMsg); await Promise.all([loadFila(), loadReservas(), loadMesas(), loadBloqueios()]); renderActive(); }
     catch (e) { D.toast(e.message || "Erro", true); }
   }
 
@@ -305,7 +310,7 @@
       '<div class="toolbar"><div class="daynav"><button class="btn btn-secondary btn-sm" id="dPrev">‹</button><input type="date" id="dSel" value="' + S.resData + '"><button class="btn btn-secondary btn-sm" id="dNext">›</button>' +
       '<button class="btn btn-secondary btn-sm" id="dHoje">Hoje</button><span class="title">' + D.weekday(S.resData) + "</span></div><span class=\"grow\"></span>" +
       '<button class="btn btn-gold btn-sm" id="novaRes">+ Nova reserva</button></div>' +
-      '<div class="stats"><div class="stat"><div class="n">' + ativas.length + '</div><div class="l">reservas ativas</div></div><div class="stat"><div class="n">' + pessoas + '</div><div class="l">pessoas esperadas</div></div>' +
+      bloqBanner(S.resData) + '<div class="stats"><div class="stat"><div class="n">' + ativas.length + '</div><div class="l">reservas ativas</div></div><div class="stat"><div class="n">' + pessoas + '</div><div class="l">pessoas esperadas</div></div>' +
       '<div class="stat"><div class="n">' + S.pendentes + '</div><div class="l">pendentes de confirmação</div></div><div class="stat"><div class="n">' + noshow + '</div><div class="l">não compareceram (dia)</div></div></div>' +
       (ativas.length ? '<div class="list cols">' + ativas.map(item).join("") + "</div>" : '<div class="empty">Nenhuma reserva ativa neste dia. 📅</div>') +
       (fim.length ? '<div class="section-t">Encerradas (' + fim.length + ')</div><div class="list cols">' + fim.map(item).join("") + "</div>" : "");
@@ -352,6 +357,8 @@
         m.querySelector("#coBox").innerHTML = D.comoHtml("co"); D.bindComo("co");
         m.querySelector("#ok").onclick = async function () {
           try {
+            var bl = bloqueiosQueAtingem(m.querySelector("#d").value, m.querySelector("#h").value);
+            if (bl.length && !confirm("Este horário está bloqueado para reservas online:\n" + bl.map(function (b) { return "• " + bloqEscopo(b) + ": " + b.motivo; }).join("\n") + "\n\nCriar a reserva mesmo assim?")) return;
             var r = await D.rpc("reserva_criar_equipe", { p_nome: m.querySelector("#n").value, p_telefone: m.querySelector("#t").value, p_email: null, p_data: m.querySelector("#d").value,
               p_hora: m.querySelector("#h").value, p_pessoas: parseInt(m.querySelector("#p").value, 10), p_area: m.querySelector("#a").value, p_como_conheceu: D.comoValue("co"), p_obs: m.querySelector("#ob").value || null });
             closeModal(); D.toast("Reserva criada: " + r.codigo); S.resData = m.querySelector("#d").value; await loadReservas(); renderActive();
@@ -569,6 +576,101 @@
     } catch (e) { $("pane").innerHTML = '<div class="notice err">' + esc(e.message) + "</div>"; }
   }
 
+  // ------------------------------------------------------------ BLOQUEIOS
+  function bloqAtivos() { return S.bloqueios.filter(function (b) { return !b.removido_em; }); }
+  function bloqEscopo(b) {
+    if (b.hora_ini) return "Horários de " + hhmm(b.hora_ini) + " às " + hhmm(b.hora_fim);
+    if (b.turno === "almoco") return "Almoço";
+    if (b.turno === "jantar") return "Jantar";
+    return "Dia inteiro";
+  }
+  function bloqPeriodo(b) { return b.data_ini === b.data_fim ? D.fmtDate(b.data_ini) : D.fmtDate(b.data_ini) + " a " + D.fmtDate(b.data_fim); }
+  function turnoDeHora(data, hora) {
+    var fx = (S.cfg.horarios || {})[String(new Date(data + "T12:00:00").getDay())] || [];
+    for (var i = 0; i < fx.length; i++) if (hora >= fx[i][0] && hora <= fx[i][1]) return fx[i][2] || (fx[i][0] < "16:00" ? "almoco" : "jantar");
+    return hora < "16:00" ? "almoco" : "jantar";
+  }
+  function bloqueiaHorario(b, data, hora) {
+    if (data < b.data_ini || data > b.data_fim) return false;
+    if (b.hora_ini) return hora >= hhmm(b.hora_ini) && hora < hhmm(b.hora_fim);
+    return !b.turno || turnoDeHora(data, hora) === b.turno;
+  }
+  function bloqueiosQueAtingem(data, hora) { return bloqAtivos().filter(function (b) { return bloqueiaHorario(b, data, hora); }); }
+  function bloqBanner(data) {
+    var l = bloqAtivos().filter(function (b) { return data >= b.data_ini && data <= b.data_fim; });
+    if (!l.length) return "";
+    return '<div class="notice warn">🚫 <b>Reservas online bloqueadas neste dia:</b> ' + l.map(function (b) { return esc(bloqEscopo(b)) + " — " + esc(b.motivo); }).join(" · ") + "</div>";
+  }
+  function fmtQuando(ts) { var d = new Date(ts); return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
+
+  function renderBloqueios() {
+    var ativos = bloqAtivos().filter(function (b) { return b.data_fim >= S.hoje; }).sort(function (a, b) { return a.data_ini < b.data_ini ? -1 : a.data_ini > b.data_ini ? 1 : 0; });
+    var hist = S.bloqueios.filter(function (b) { return b.removido_em || b.data_fim < S.hoje; }).slice(0, 30);
+    function item(b, ativo) {
+      return '<div class="item bloq-item" data-id="' + b.id + '"><div class="top"><div class="nm">' + esc(bloqPeriodo(b)) + '</div><span class="pill ' + (ativo ? "bad" : "mute") + '">' + esc(bloqEscopo(b)) + "</span>" +
+        (b.removido_em ? '<span class="pill mute">Removido</span>' : !ativo ? '<span class="pill mute">Encerrado</span>' : "") + "</div>" +
+        '<div class="motivo"><b>Justificativa:</b> ' + esc(b.motivo) + "</div>" +
+        '<div class="meta"><span>Criado por <b>' + esc(b.criado_por_nome || "—") + "</b> em " + fmtQuando(b.created_at) + "</span>" +
+        (b.removido_em ? "<span>Removido por <b>" + esc(b.removido_por_nome || "—") + "</b> em " + fmtQuando(b.removido_em) + "</span>" : "") + "</div>" +
+        (ativo ? '<div class="acts"><button class="btn btn-danger btn-sm" data-act="rm">Remover bloqueio</button></div>' : "") + "</div>";
+    }
+    $("pane").innerHTML =
+      '<div class="toolbar"><div class="grow"><b>Bloqueio de reservas</b><div class="hint" style="margin:2px 0 0">Vale para as reservas online (/reservas). Não afeta a fila e não cancela reservas já feitas.</div></div><button class="btn btn-gold btn-sm" id="novoBloq">+ Novo bloqueio</button></div>' +
+      '<div class="section-t" style="margin-top:0">Ativos e programados</div>' +
+      (ativos.length ? '<div class="list cols">' + ativos.map(function (b) { return item(b, true); }).join("") + "</div>" : '<div class="empty">Nenhum bloqueio ativo. As reservas seguem o horário de funcionamento. ✅</div>') +
+      (hist.length ? '<div class="section-t">Histórico</div><div class="list cols">' + hist.map(function (b) { return item(b, false); }).join("") + "</div>" : "");
+    $("novoBloq").onclick = modalNovoBloqueio;
+    $("pane").querySelectorAll('[data-act="rm"]').forEach(function (btn) {
+      btn.onclick = function () {
+        var id = btn.closest(".item").getAttribute("data-id"), b = S.bloqueios.filter(function (x) { return x.id === id; })[0]; if (!b) return;
+        if (!confirm("Remover o bloqueio de " + bloqPeriodo(b) + " (" + bloqEscopo(b) + ")?\nOs horários voltam a ficar disponíveis para reservas online. O registro fica no histórico.")) return;
+        act(async function () { must(await sb.from("bloqueios").update({ removido_em: nowIso(), removido_por_nome: S.staffNome }).eq("id", id)); }, "Bloqueio removido");
+      };
+    });
+  }
+
+  function modalNovoBloqueio() {
+    openModal('<h3>Novo bloqueio de reservas</h3><div class="notice err" id="e" hidden></div>' +
+      '<div class="field"><label>O que bloquear?</label><div class="chips" id="tipo">' +
+      '<input type="radio" name="tp" id="tp1" value="dia" checked><label for="tp1">Dia inteiro</label>' +
+      '<input type="radio" name="tp" id="tp2" value="almoco"><label for="tp2">Só almoço</label>' +
+      '<input type="radio" name="tp" id="tp3" value="jantar"><label for="tp3">Só jantar</label>' +
+      '<input type="radio" name="tp" id="tp4" value="hora"><label for="tp4">Horário específico</label></div></div>' +
+      '<div class="row2"><div class="field"><label>De</label><input type="date" id="di" min="' + S.hoje + '" value="' + (S.resData >= S.hoje ? S.resData : S.hoje) + '"></div>' +
+      '<div class="field"><label>Até <span style="font-weight:400;color:var(--text-muted)">(vazio = só um dia)</span></label><input type="date" id="df" min="' + S.hoje + '"></div></div>' +
+      '<div class="row2" id="horas" hidden><div class="field"><label>Das</label><input type="time" id="hi" value="19:00"></div><div class="field"><label>Às</label><input type="time" id="hf" value="21:00"></div></div>' +
+      '<div class="hint" id="horasHint" hidden style="margin:-8px 0 12px">Bloqueia reservas que <b>começam</b> nesse intervalo (o horário final não entra).</div>' +
+      '<div class="field"><label for="mt">Justificativa <span style="color:var(--danger)">*</span></label><textarea id="mt" maxlength="300" placeholder="Ex.: evento fechado, manutenção, feriado, cozinha reduzida…"></textarea><div class="hint">Obrigatória. Fica registrada com o seu nome e a data.</div></div>' +
+      '<div class="foot"><button class="btn btn-secondary" id="cx">Cancelar</button><button class="btn btn-primary" id="ok">Bloquear</button></div>',
+      function (m) {
+        m.querySelector("#cx").onclick = closeModal;
+        m.querySelectorAll('input[name="tp"]').forEach(function (r) {
+          r.onchange = function () { var h = m.querySelector('input[name="tp"]:checked').value === "hora"; m.querySelector("#horas").hidden = !h; m.querySelector("#horasHint").hidden = !h; };
+        });
+        m.querySelector("#ok").onclick = async function () {
+          var err = m.querySelector("#e"), btn = this;
+          try {
+            var tp = m.querySelector('input[name="tp"]:checked').value, di = m.querySelector("#di").value, df = m.querySelector("#df").value || di, mt = m.querySelector("#mt").value.trim();
+            if (mt.length < 5) throw new Error("Informe a justificativa do bloqueio (mínimo de 5 caracteres).");
+            if (!di) throw new Error("Informe a data inicial.");
+            if (di < S.hoje) throw new Error("A data inicial não pode ser no passado.");
+            if (df < di) throw new Error("A data final deve ser igual ou posterior à inicial.");
+            var b = { data_ini: di, data_fim: df, turno: tp === "almoco" || tp === "jantar" ? tp : null, hora_ini: null, hora_fim: null, motivo: mt, criado_por_nome: S.staffNome };
+            if (tp === "hora") {
+              b.hora_ini = m.querySelector("#hi").value; b.hora_fim = m.querySelector("#hf").value;
+              if (!b.hora_ini || !b.hora_fim || b.hora_ini >= b.hora_fim) throw new Error("O horário inicial deve ser anterior ao final.");
+            }
+            btn.disabled = true;
+            var ex = await fetchAll("reservas", "data,hora,status,nome", function (q) { return q.gte("data", di).lte("data", df).in("status", ["pendente", "confirmada", "chegou"]).order("created_at"); });
+            var afet = ex.filter(function (r) { return bloqueiaHorario(b, r.data, hhmm(r.hora)); });
+            if (afet.length && !confirm("Já existem " + afet.length + " reserva(s) ativa(s) nesse período/horário. Elas NÃO serão canceladas automaticamente: você precisará tratá-las na aba Reservas.\n\nCriar o bloqueio mesmo assim?")) { btn.disabled = false; return; }
+            must(await sb.from("bloqueios").insert(b));
+            closeModal(); D.toast("Bloqueio criado" + (afet.length ? " — atenção às " + afet.length + " reserva(s) já existente(s)" : "")); await loadBloqueios(); renderActive();
+          } catch (e) { btn.disabled = false; D.setNotice(err, e.message); }
+        };
+      });
+  }
+
   // ------------------------------------------------------------ AJUSTES
   var DOW = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
   function showQr(titulo, url) {
@@ -583,9 +685,19 @@
   function renderAjustes() {
     var c = S.cfg, h = c.horarios || {};
     var urlFila = new URL("fila", location.href).href, urlRes = new URL("reservas", location.href).href;
+    function turnosDoDia(i) {
+      var out = { almoco: null, jantar: null };
+      (h[String(i)] || []).forEach(function (f) { var t = f[2] || (f[0] < "16:00" ? "almoco" : "jantar"); if (!out[t]) out[t] = f; });
+      return out;
+    }
     var hoursHtml = DOW.map(function (n, i) {
-      var f = (h[String(i)] || [])[0], aberto = !!f;
-      return '<div class="hours-row"><label class="switch"><input type="checkbox" data-h="open" data-d="' + i + '" ' + (aberto ? "checked" : "") + "> " + n + '</label><input type="time" data-h="a" data-d="' + i + '" value="' + (f ? f[0] : "11:00") + '"><input type="time" data-h="f" data-d="' + i + '" value="' + (f ? f[1] : "23:00") + '"></div>';
+      var t = turnosDoDia(i);
+      function row(key, label, def) {
+        var f = t[key];
+        return '<div class="hours-row"><label class="switch"><input type="checkbox" data-t="' + key + '" data-k="open" data-d="' + i + '" ' + (f ? "checked" : "") + "> " + label + '</label>' +
+          '<input type="time" data-t="' + key + '" data-k="a" data-d="' + i + '" value="' + (f ? f[0] : def[0]) + '"><input type="time" data-t="' + key + '" data-k="f" data-d="' + i + '" value="' + (f ? f[1] : def[1]) + '"></div>';
+      }
+      return '<div class="hours-day"><div class="hd-name">' + n + "</div>" + row("almoco", "Almoço", ["11:00", "15:00"]) + row("jantar", "Jantar", ["18:00", "23:00"]) + "</div>";
     }).join("");
     function num(id, label, val, min, max, hint) { return '<div class="field"><label for="' + id + '">' + label + '</label><input type="number" id="' + id + '" min="' + min + '" max="' + max + '" value="' + val + '">' + (hint ? '<div class="hint">' + hint + "</div>" : "") + "</div>"; }
 
@@ -593,7 +705,7 @@
       '<div class="card"><h3 style="font-size:18px;margin-bottom:12px">Links e QR Codes</h3><p class="hint" style="margin-top:0">Cada link só mostra o seu próprio ambiente. Só este painel enxerga os dois.</p>' +
       '<div class="lbl">Fila de espera (imprima o QR Code e coloque na entrada)</div><div class="url-row"><input type="text" readonly value="' + esc(urlFila) + '"><button class="btn btn-secondary btn-sm" id="cpF">Copiar</button><button class="btn btn-gold btn-sm" id="qrF">QR Code</button></div>' +
       '<div class="lbl" style="margin-top:12px">Reservas (divulgue em Instagram, Google e WhatsApp)</div><div class="url-row"><input type="text" readonly value="' + esc(urlRes) + '"><button class="btn btn-secondary btn-sm" id="cpR">Copiar</button><button class="btn btn-gold btn-sm" id="qrR">QR Code</button></div></div>' +
-      '<div class="card"><h3 style="font-size:18px;margin-bottom:12px">Horário de funcionamento</h3><p class="hint" style="margin-top:0">Define os horários que o cliente vê ao reservar. Cada dia aceita uma faixa.</p>' + hoursHtml + "</div>" +
+      '<div class="card"><h3 style="font-size:18px;margin-bottom:12px">Horário de funcionamento</h3><p class="hint" style="margin-top:0">Define os horários que o cliente vê ao reservar. Cada dia tem dois turnos, <b>Almoço</b> e <b>Jantar</b>: desmarque o turno em que o restaurante não aceita reservas. Para bloquear um dia ou horário específico, use a aba <b>Bloqueios</b>.</p>' + hoursHtml + "</div>" +
       '<div class="card"><h3 style="font-size:18px;margin-bottom:12px">Regras</h3><div class="notice err" id="sErr" hidden></div><div class="settings-grid">' +
       num("sDur", "Duração da reserva (min)", c.duracao_reserva_min, 30, 360, "Tempo que a mesa fica reservada.") +
       num("sInt", "Intervalo entre horários (min)", c.intervalo_slot_min, 15, 120) +
@@ -620,10 +732,16 @@
     try {
       var hor = {};
       for (var i = 0; i < 7; i++) {
-        var open = document.querySelector('[data-h="open"][data-d="' + i + '"]').checked;
-        var a = document.querySelector('[data-h="a"][data-d="' + i + '"]').value, f = document.querySelector('[data-h="f"][data-d="' + i + '"]').value;
-        if (open && (!a || !f || a >= f)) throw new Error("Horário inválido em " + DOW[i] + ": a abertura deve ser antes do fechamento.");
-        hor[String(i)] = open ? [[a, f]] : [];
+        var lista = [];
+        ["almoco", "jantar"].forEach(function (t) {
+          var q = function (k) { return document.querySelector('[data-t="' + t + '"][data-k="' + k + '"][data-d="' + i + '"]'); };
+          if (!q("open").checked) return;
+          var a = q("a").value, f = q("f").value;
+          if (!a || !f || a >= f) throw new Error("Horário inválido no " + (t === "almoco" ? "almoço" : "jantar") + " de " + DOW[i] + ": a abertura deve ser antes do fechamento.");
+          lista.push([a, f, t]);
+        });
+        if (lista.length === 2 && lista[0][1] > lista[1][0]) throw new Error("Em " + DOW[i] + ", o almoço deve terminar antes do início do jantar.");
+        hor[String(i)] = lista;
       }
       function n(id) { return parseInt($(id).value, 10); }
       var patch = { horarios: hor, duracao_reserva_min: n("sDur"), intervalo_slot_min: n("sInt"), ultima_reserva_antes_fechar_min: n("sUlt"), max_pessoas_reserva: n("sMax"),

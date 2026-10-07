@@ -40,13 +40,26 @@ confirmação automática (ou manual, se preferir), consulta/cancelamento por c�
 **Equipe:** fila em tempo real com som de novo cliente, campo para o **nº do pager** de cada cliente, **QR Code por cliente**
 (o cliente lê e volta a acompanhar a posição no celular), marcar/tirar prioridade, chamar / sentar em mesa / não veio,
 WhatsApp com mensagem pronta,
-fila aberta/fechada, reservas por dia (confirmar, chegou, sentar, finalizar, não compareceu, cancelar, destaque de atrasadas),
+fila aberta/fechada, bloqueio de dias e horários com justificativa, reservas por dia (confirmar, chegou, sentar, finalizar, não compareceu, cancelar, destaque de atrasadas),
 reserva por telefone, mapa de mesas com status (livre, ocupada, reservada, limpeza), relatórios por período (hoje, 7, 30 ou 90 dias)
 com espera média, desistência, no-show, fila e reservas por dia/semana e **como os clientes conheceram o Drive**
 (ranking dos canais, fila e reservas juntas, e o que escreveram em "Outros"), e ajustes.
 
 **Alocação automática de mesas:** cada reserva já nasce com a menor mesa que comporta o grupo e não tem conflito de
 horário — isso evita overbooking.
+
+## Turnos (almoço e jantar) e bloqueios
+
+- **Ajustes > Horário de funcionamento:** cada dia tem dois turnos, **Almoço** e **Jantar**, cada um com abertura e fechamento.
+  Desmarque o turno em que não há reservas. O cliente vê os horários separados por turno.
+  Se o seu banco tinha uma faixa única por dia (ex.: 11:00–23:00), ela é lida como Almoço; ajuste os turnos em Ajustes.
+- **Aba Bloqueios:** bloqueia **dia(s) inteiro(s)**, **só almoço**, **só jantar** ou um **horário específico**, por uma data ou período.
+  A **justificativa é obrigatória** (mínimo de 5 caracteres, também exigida pelo banco) e fica registrada com o nome de quem bloqueou e a data.
+- Os bloqueios valem para as **reservas online** (`/reservas`); não afetam a fila e **não cancelam** reservas já feitas
+  (o painel avisa quantas reservas já existem no período). A equipe ainda pode criar uma reserva por telefone num horário
+  bloqueado, mediante confirmação na tela, que mostra o motivo do bloqueio.
+- Remover um bloqueio não apaga o registro: ele vai para o **Histórico**, com quem removeu e quando.
+- O cliente não vê a justificativa; vê só que o horário/dia não está disponível.
 
 ## Salões
 
