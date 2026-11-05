@@ -263,3 +263,16 @@ footer { text-align: center; font-size: 11.5px; color: var(--text-muted); paddin
   .print-area img { width: 360px; height: 360px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Cores por salão: faixa no topo da mesa + legenda */
+.mesa, .sal-chip { --sal: #6b5c4f; }
+[data-sal="principal"] { --sal: #2f6fb3; }
+[data-sal="mezanino"] { --sal: #8a4fc0; }
+[data-sal="kids"] { --sal: #e0679a; }
+.mesa[data-sal] { box-shadow: inset 0 8px 0 var(--sal); padding-top: 8px; }
+.legend i.sal-chip { background: var(--sal); border-color: var(--sal); }
+@media (prefers-color-scheme: dark) {
+  [data-sal="principal"] { --sal: #5b9be0; }
+  [data-sal="mezanino"] { --sal: #b17df0; }
+  [data-sal="kids"] { --sal: #f08bb5; }
+}
