@@ -407,6 +407,18 @@
   var CELL = 64, COLS = 12, ROWS = 8;
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
+  // Cor por salão (o estado da mesa continua na borda/fundo; o salão aparece na faixa superior)
+  function salSlug(area) {
+    var a = String(area || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    return a.indexOf("mezanino") >= 0 ? "mezanino" : a.indexOf("kids") >= 0 ? "kids" : a.indexOf("principal") >= 0 ? "principal" : "outro";
+  }
+  function salLegendHtml() {
+    var nomes = {};
+    S.mesas.forEach(function (m) { if (m.ativa) { nomes[m.area] = (nomes[m.area] || 0) + 1; } });
+    return Object.keys(nomes).sort().map(function (a) {
+      return '<span><i class="sal-chip" data-sal="' + salSlug(a) + '"></i>' + esc(a) + " (" + nomes[a] + ")</span>";
+    }).join("");
+  }
   function renderMesas() {
     var cont = { livre: 0, ocupada: 0, reservada: 0, limpeza: 0 };
     S.mesas.forEach(function (m) { if (m.ativa) cont[mesaEstado(m)]++; });
@@ -415,11 +427,13 @@
       ')</span><span><i style="border-color:var(--gold)"></i>Reservada (' + cont.reservada + ')</span><span><i style="border-color:var(--text-muted);border-style:dashed"></i>Limpeza (' + cont.limpeza + ')</span></div><span class="grow"></span>' +
       '<label class="switch"><input type="checkbox" id="editMap" ' + (S.edit ? "checked" : "") + '> Editar layout</label><button class="btn btn-gold btn-sm" id="addMesa">+ Mesa</button></div>' +
       (S.edit ? '<div class="notice warn">Arraste as mesas para reorganizar o salão. Toque numa mesa para editar ou excluir.</div>' : "") +
+      '<div class="legend" style="margin:0 0 10px"><b style="color:var(--text)">Salões:</b>' + salLegendHtml() + '</div>' +
       '<div class="map-scroll"><div class="map" id="map"></div></div>';
     var map = $("map");
     S.mesas.forEach(function (m) {
       var est = mesaEstado(m), el = document.createElement("div");
       el.className = "mesa " + est + (m.ativa ? "" : " inativa") + (S.edit ? " edit" : "");
+      el.setAttribute("data-sal", salSlug(m.area));
       el.style.left = m.pos_x * CELL + "px"; el.style.top = m.pos_y * CELL + "px";
       el.innerHTML = esc(m.nome) + "<small>" + m.cap_min + "-" + m.cap_max + "</small>";
       el.title = m.nome + " · " + m.area + " · " + ESTADO_TXT[est];
@@ -456,7 +470,7 @@
   function modalMesa(m) {
     var est = mesaEstado(m);
     var prox = S.reservasHoje.filter(function (r) { return r.mesa_id === m.id && ["pendente", "confirmada", "chegou"].indexOf(r.status) >= 0 && inicioMs(r) + S.cfg.duracao_reserva_min * 60000 > Date.now(); });
-    openModal("<h3>Mesa " + esc(m.nome) + '</h3><p class="hint" style="margin:-8px 0 12px">' + esc(m.area) + " · " + m.cap_min + "-" + m.cap_max + ' lugares · <b>' + ESTADO_TXT[est] + "</b>" +
+    openModal("<h3>Mesa " + esc(m.nome) + '</h3><p class="hint" style="margin:-8px 0 12px"><i class="sal-chip" data-sal="' + salSlug(m.area) + '" style="display:inline-block;width:12px;height:12px;border-radius:4px;background:var(--sal);margin-right:6px;vertical-align:-1px"></i>' + esc(m.area) + " · " + m.cap_min + "-" + m.cap_max + ' lugares · <b>' + ESTADO_TXT[est] + "</b>" +
       (m.status === "ocupada" && m.ocupada_desde ? " há " + minsSince(m.ocupada_desde) + " min" : "") + "</p>" +
       (prox.length ? '<div class="section-t" style="margin-top:0">Reservas de hoje nesta mesa</div>' + prox.map(function (r) { return '<div class="trow"><span class="k">' + hhmm(r.hora) + '</span><span class="v">' + esc(r.nome) + " · " + r.pessoas + "p</span></div>"; }).join("") : "") +
       '<div class="foot" style="flex-wrap:wrap"><button class="btn btn-secondary" data-s="livre">Liberar</button><button class="btn btn-secondary" data-s="ocupada">Ocupada</button><button class="btn btn-secondary" data-s="limpeza">Limpeza</button></div>' +
