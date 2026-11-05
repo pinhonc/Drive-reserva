@@ -65,9 +65,16 @@
     var r = await sb.from("staff").select("nome").eq("user_id", user.id).maybeSingle();
     if (r.error || !r.data) { show("vDenied"); return; }
     $("who").textContent = r.data.nome || user.email; S.staffNome = r.data.nome || user.email;
-    try {
-      await loadAll(); show("vApp"); renderAll(); subscribe();
-    } catch (e) { D.toast("Erro ao carregar: " + e.message, true); }
+    show("vApp");
+    try { await loadAll(); }
+    catch (e) {
+      var box = document.getElementById("errBanner");
+      if (!box) { box = document.createElement("div"); box.id = "errBanner"; box.className = "card"; box.style.cssText = "border:2px solid #c0392b;padding:14px;margin:12px 0;font-weight:600";
+        var app = $("vApp"); app.insertBefore(box, app.firstChild); }
+      box.textContent = "Não foi possível carregar todos os dados (" + (e && e.message || e) + "). Rode o arquivo supabase/schema.sql atualizado no SQL Editor do Supabase e recarregue a página.";
+    }
+    try { renderAll(); } catch (e2) { console.error(e2); }
+    try { subscribe(); } catch (e3) { console.error(e3); }
   }
   function teardown() { if (S.channel) { sb.removeChannel(S.channel); S.channel = null; } }
 
@@ -129,6 +136,7 @@
     else if (S.tab === "reservas") renderReservas();
     else if (S.tab === "mesas") renderMesas();
     else if (S.tab === "rel") renderRel();
+    else if (S.tab === "guia") window.DIBGuia.render($("pane"));
     else renderAjustes();
   }
 
