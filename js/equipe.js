@@ -467,6 +467,24 @@
     });
   }
 
+  // Exclui a mesa do mapa. Reservas/fila que a usavam ficam sem mesa definida.
+  async function excluirMesa(m, onError) {
+    var futuras = S.reservas.concat(S.reservasHoje || []).filter(function (r, i, a) {
+      return r.mesa_id === m.id && ["pendente", "confirmada", "chegou"].indexOf(r.status) >= 0 && a.indexOf(r) === i;
+    }).length;
+    var aviso = "Excluir a mesa " + m.nome + " (" + m.area + ") do mapa?";
+    if (m.status === "ocupada") aviso += "\n\nAtenção: esta mesa está marcada como OCUPADA agora.";
+    if (futuras) aviso += "\n\n" + futuras + " reserva(s) ativa(s) usam esta mesa e ficarão SEM mesa definida.";
+    else aviso += "\n\nReservas já feitas nela ficarão sem mesa definida.";
+    aviso += "\n\nEsta ação não pode ser desfeita. Para só esconder a mesa, desmarque 'Mesa ativa' em vez de excluir.";
+    if (!confirm(aviso)) return;
+    try {
+      must(await sb.from("mesas").delete().eq("id", m.id));
+      closeModal(); D.toast("Mesa " + m.nome + " excluída");
+      await Promise.all([loadMesas(), loadFila(), loadReservas()]); renderActive();
+    } catch (e) { if (onError) onError(e.message); else D.toast(e.message, true); }
+  }
+
   function modalMesa(m) {
     var est = mesaEstado(m);
     var prox = S.reservasHoje.filter(function (r) { return r.mesa_id === m.id && ["pendente", "confirmada", "chegou"].indexOf(r.status) >= 0 && inicioMs(r) + S.cfg.duracao_reserva_min * 60000 > Date.now(); });
@@ -474,9 +492,10 @@
       (m.status === "ocupada" && m.ocupada_desde ? " há " + minsSince(m.ocupada_desde) + " min" : "") + "</p>" +
       (prox.length ? '<div class="section-t" style="margin-top:0">Reservas de hoje nesta mesa</div>' + prox.map(function (r) { return '<div class="trow"><span class="k">' + hhmm(r.hora) + '</span><span class="v">' + esc(r.nome) + " · " + r.pessoas + "p</span></div>"; }).join("") : "") +
       '<div class="foot" style="flex-wrap:wrap"><button class="btn btn-secondary" data-s="livre">Liberar</button><button class="btn btn-secondary" data-s="ocupada">Ocupada</button><button class="btn btn-secondary" data-s="limpeza">Limpeza</button></div>' +
-      '<div class="foot"><button class="btn btn-secondary" id="cx">Fechar</button></div>',
+      '<div class="foot"><button class="btn btn-danger" id="delM">Excluir mesa</button><button class="btn btn-secondary" id="cx">Fechar</button></div>',
       function (md) {
         md.querySelector("#cx").onclick = closeModal;
+        md.querySelector("#delM").onclick = function () { excluirMesa(m); };
         md.querySelectorAll("[data-s]").forEach(function (b) { b.onclick = function () { closeModal(); act(function () { return setMesaStatus(m.id, b.getAttribute("data-s")); }); }; });
       });
   }
@@ -519,11 +538,7 @@
         try { var d = readMesa(md); d.ativa = md.querySelector("#at").checked; must(await sb.from("mesas").update(d).eq("id", m.id)); closeModal(); D.toast("Mesa salva"); await loadMesas(); renderActive(); }
         catch (e) { D.setNotice(md.querySelector("#e"), e.message); }
       };
-      md.querySelector("#del").onclick = async function () {
-        if (!confirm("Excluir a mesa " + m.nome + "? Reservas já feitas nela ficarão sem mesa definida.")) return;
-        try { must(await sb.from("mesas").delete().eq("id", m.id)); closeModal(); D.toast("Mesa excluída"); await Promise.all([loadMesas(), loadReservas()]); renderActive(); }
-        catch (e) { D.setNotice(md.querySelector("#e"), e.message); }
-      };
+      md.querySelector("#del").onclick = function () { excluirMesa(m, function (msg) { D.setNotice(md.querySelector("#e"), msg); }); };
     });
   }
 
