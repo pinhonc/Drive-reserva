@@ -233,7 +233,7 @@
         '<div class="meta" style="align-items:center"><label>📟 Pager nº <input class="pg" type="text" inputmode="numeric" maxlength="10" value="' + esc(f.pager_fisico || "") + '" placeholder="—" style="width:84px;padding:6px 8px;display:inline-block"></label></div>' +
         '<div class="acts">' + (called ? "" : '<button class="btn btn-secondary btn-sm" data-act="chamar">Chamar</button>') +
         '<button class="btn btn-primary btn-sm" data-act="sentar">Sentar</button><button class="btn btn-secondary btn-sm" data-act="wa">WhatsApp</button>' +
-        '<button class="btn btn-secondary btn-sm" data-act="qr">QR da fila</button><button class="btn btn-secondary btn-sm" data-act="prio">' + (f.prioritario ? "Tirar prioridade" : "Prioridade") + '</button>' +
+        '<button class="btn btn-secondary btn-sm" data-act="qr">QR da fila</button><button class="btn btn-secondary btn-sm" data-act="prio">' + (f.prioritario ? "Tirar prioridade" : "Prioridade") + '</button><button class="btn btn-secondary btn-sm" data-act="editar">Editar</button>' +
         '<button class="btn btn-danger btn-sm" data-act="naoveio">Não veio</button></div></div>';
     }
 
@@ -250,7 +250,9 @@
       (fechados.length ? '<div class="section-t">Encerrados hoje (' + fechados.length + ")</div>" +
         '<div class="list cols">' + fechados.slice().reverse().map(function (f) {
           var t = f.status === "sentado" ? ["Atendido", "ok"] : f.status === "cancelado" ? ["Desistiu", "bad"] : ["Não veio", "bad"];
-          return '<div class="item"><div class="top"><div class="num">' + String(f.pager).padStart(3, "0") + '</div><div class="nm">' + esc(f.nome) + '</div><span class="pill ' + t[1] + '">' + t[0] + "</span></div></div>";
+          return '<div class="item" data-id="' + f.id + '"><div class="top"><div class="num">' + String(f.pager).padStart(3, "0") + '</div><div class="nm">' + esc(f.nome) + '</div><span class="pill ' + t[1] + '">' + t[0] + "</span></div>" +
+            '<div class="meta"><span>👥 <b>' + f.pessoas + "</b></span><span>📍 " + esc(f.area) + "</span><span>📞 " + esc(f.telefone) + "</span>" + (f.pager_fisico ? "<span>📟 " + esc(f.pager_fisico) + "</span>" : "") + "</div>" +
+            '<div class="acts"><button class="btn btn-secondary btn-sm" data-act="editar">Editar</button>' + (f.status === "sentado" ? '<button class="btn btn-gold btn-sm" data-act="voltar">Voltar à fila</button>' : "") + "</div></div>";
         }).join("") + "</div>" : "");
 
     $("filaAberta").onchange = function () {
@@ -271,11 +273,64 @@
     });
   }
 
+  // Edita nome, telefone, pessoas, área e pager de um cliente da fila (ativo ou já encerrado hoje)
+  function modalEditFila(f) {
+    openModal("<h3>Editar cliente · senha " + String(f.pager).padStart(3, "0") + '</h3><div class="notice err" id="e" hidden></div>' +
+      '<div class="field"><label for="en">Nome</label><input type="text" id="en" maxlength="80" value="' + esc(f.nome) + '"></div>' +
+      '<div class="row2"><div class="field"><label for="et">Telefone</label><input type="tel" id="et" placeholder="(41) 90000-0000" value="' + esc(f.telefone) + '"></div>' +
+      '<div class="field"><label for="ep">Pessoas</label><input type="number" id="ep" min="1" max="30" value="' + f.pessoas + '"></div></div>' +
+      '<div class="row2"><div class="field"><label for="ea">Área</label><select id="ea"></select></div>' +
+      '<div class="field"><label for="eg">Nº do pager</label><input type="text" id="eg" inputmode="numeric" maxlength="10" value="' + esc(f.pager_fisico || "") + '" placeholder="Nº do pager"></div></div>' +
+      '<div class="foot"><button class="btn btn-secondary" id="cx">Cancelar</button><button class="btn btn-primary" id="ok">Salvar</button></div>',
+      function (m) {
+        var sa = m.querySelector("#ea"), pi = m.querySelector("#ep");
+        sa.innerHTML = '<option>' + esc(f.area) + "</option>"; D.aplicarAreasSelect(sa, f.pessoas, true); sa.value = f.area;
+        if (sa.value !== f.area) sa.value = sa.options[0].value;
+        function ajusta() { var n = parseInt(pi.value, 10); if (n >= 1) D.aplicarAreasSelect(sa, n, true); }
+        pi.addEventListener("input", ajusta); pi.addEventListener("change", ajusta);
+        D.maskPhone(m.querySelector("#et")); m.querySelector("#cx").onclick = closeModal;
+        m.querySelector("#ok").onclick = async function () {
+          var err = m.querySelector("#e");
+          try {
+            var nome = m.querySelector("#en").value.trim(), tel = m.querySelector("#et").value.trim(), n = parseInt(pi.value, 10), pg = m.querySelector("#eg").value.trim();
+            if (nome.length < 2) throw new Error("Informe o nome.");
+            var dg = D.digits(tel); if (dg.length < 10 || dg.length > 13) throw new Error("Informe um telefone válido, com DDD.");
+            if (!(n >= 1 && n <= 30)) throw new Error("O número de pessoas deve ficar entre 1 e 30.");
+            var area = sa.value;
+            if ((area !== f.area || n !== f.pessoas) && area !== "Sem preferência" && !D.areaPermitida(area, n)) throw new Error(D.areaAviso(n) || "Área não permitida para esse grupo.");
+            var dup = S.fila.filter(function (x) { return x.id !== f.id && (x.status === "aguardando" || x.status === "chamado") && D.digits(x.telefone) === dg; })[0];
+            if ((f.status === "aguardando" || f.status === "chamado") && dup) throw new Error("Este telefone já está na fila (senha " + String(dup.pager).padStart(3, "0") + ").");
+            var upd = { nome: nome, telefone: tel, pager_fisico: pg || null };
+            if (n !== f.pessoas) upd.pessoas = n;
+            if (area !== f.area || n !== f.pessoas) upd.area = area;
+            must(await sb.from("fila").update(upd).eq("id", f.id));
+            closeModal(); D.toast("Cliente atualizado"); await loadFila(); renderActive();
+          } catch (e) { D.setNotice(err, e.message); }
+        };
+      });
+  }
+
+  // Devolve à fila um cliente que já havia sentado (mantém a ordem de chegada e a prioridade originais)
+  function voltarFila(f) {
+    var m = f.mesa_id ? mesaById(f.mesa_id) : null, liberar = !!(m && m.status === "ocupada");
+    var dup = S.fila.filter(function (x) { return x.id !== f.id && (x.status === "aguardando" || x.status === "chamado") && D.digits(x.telefone) === D.digits(f.telefone); })[0];
+    if (dup) { D.toast("Este telefone já está na fila (senha " + String(dup.pager).padStart(3, "0") + ").", true); return; }
+    var msg = "Voltar " + f.nome + " para a fila?\n\nEle volta para o lugar da ordem de chegada original" + (f.prioritario ? " (com prioridade)" : "") + ".";
+    if (liberar) msg += "\nA mesa " + m.nome + " será marcada como Livre.";
+    if (!confirm(msg)) return;
+    act(async function () {
+      must(await sb.from("fila").update({ status: "aguardando", sentado_em: null, chamado_em: null, mesa_id: null }).eq("id", f.id));
+      if (liberar) await setMesaStatus(m.id, "livre");
+    }, "Cliente voltou para a fila");
+  }
+
   function filaQr(f) { showQr("Acompanhe sua posição — senha " + String(f.pager).padStart(3, "0"), new URL("fila", location.href).href + "?t=" + f.token); }
 
   function filaAct(a, id) {
     var f = S.fila.filter(function (x) { return x.id === id; })[0]; if (!f) return;
     if (a === "qr") filaQr(f);
+    else if (a === "editar") modalEditFila(f);
+    else if (a === "voltar") voltarFila(f);
     else if (a === "prio") act(async function () { must(await sb.from("fila").update({ prioritario: !f.prioritario }).eq("id", id)); }, f.prioritario ? "Prioridade removida" : "Marcado como prioritário");
     else if (a === "chamar") act(async function () { must(await sb.from("fila").update({ status: "chamado", chamado_em: nowIso() }).eq("id", id)); }, "Cliente chamado. Avise pelo WhatsApp se não estiver por perto.");
     else if (a === "naoveio") { if (confirm("Marcar " + f.nome + " como 'não veio'?")) act(async function () { must(await sb.from("fila").update({ status: "nao_compareceu" }).eq("id", id)); }); }
@@ -299,6 +354,11 @@
       '<div class="foot"><button class="btn btn-secondary" id="cx">Cancelar</button><button class="btn btn-primary" id="ok">Adicionar</button></div>',
       function (m) {
         D.maskPhone(m.querySelector("#t")); m.querySelector("#cx").onclick = closeModal;
+        (function () {
+          var pi = m.querySelector("#p"), sa = m.querySelector("#a");
+          function ajusta() { var n = parseInt(pi.value, 10); if (n >= 1) D.aplicarAreasSelect(sa, n, true); }
+          pi.addEventListener("input", ajusta); pi.addEventListener("change", ajusta); ajusta();
+        })();
         m.querySelector("#coBox").innerHTML = D.comoHtml("co"); D.bindComo("co");
         m.querySelector("#ok").onclick = async function () {
           try {
@@ -390,6 +450,11 @@
       '<div class="foot"><button class="btn btn-secondary" id="cx">Cancelar</button><button class="btn btn-primary" id="ok">Reservar</button></div>',
       function (m) {
         D.maskPhone(m.querySelector("#t")); m.querySelector("#cx").onclick = closeModal;
+        (function () {
+          var pi = m.querySelector("#p"), sa = m.querySelector("#a");
+          function ajusta() { var n = parseInt(pi.value, 10); if (n >= 1) D.aplicarAreasSelect(sa, n, true); }
+          pi.addEventListener("input", ajusta); pi.addEventListener("change", ajusta); ajusta();
+        })();
         m.querySelector("#coBox").innerHTML = D.comoHtml("co"); D.bindComo("co");
         m.querySelector("#ok").onclick = async function () {
           try {
@@ -509,6 +574,9 @@
     var mn = parseInt(md.querySelector("#mn").value, 10), mx = parseInt(md.querySelector("#mx").value, 10), n = md.querySelector("#n").value.trim();
     if (!n) throw new Error("Informe o nome da mesa.");
     if (!(mn >= 1) || !(mx >= mn)) throw new Error("A capacidade máxima deve ser maior ou igual à mínima.");
+    var ar = md.querySelector("#a").value;
+    if (ar === "Salão Principal" && mx > 8) throw new Error("No Salão Principal as mesas comportam no máximo 8 pessoas. Para mesas maiores, use o Mezanino.");
+    if (ar === "Kids" && mx > 6) throw new Error("No Kids as mesas comportam no máximo 6 pessoas. Para mesas maiores, use o Mezanino.");
     return { nome: n, area: md.querySelector("#a").value, cap_min: mn, cap_max: mx };
   }
 
