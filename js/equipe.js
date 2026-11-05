@@ -157,7 +157,35 @@
     must(await sb.from("mesas").update({ status: status, ocupada_desde: status === "ocupada" ? nowIso() : null }).eq("id", id));
   }
 
+  // Regra: grupos com 6+ pessoas só liberam a escolha da mesa (e o "sentar") depois que a recepção
+  // informa que pelo menos 70% do grupo já está presente.
+  var GRUPO_GRANDE = 6, PCT_PRESENTES = 0.7;
   function pickMesa(titulo, pessoas, area, preferId, onPick) {
+    if (pessoas < GRUPO_GRANDE) return pickMesaLista(titulo, pessoas, area, preferId, onPick);
+    var min = Math.ceil(pessoas * PCT_PRESENTES - 1e-9);
+    openModal("<h3>" + esc(titulo) + '</h3><p class="hint" style="margin:-8px 0 12px">Grupo de ' + pessoas + ' pessoas. Para liberar a mesa, é preciso que pelo menos <b>' + min + ' pessoas (70%)</b> já estejam presentes.</p>' +
+      '<div class="field"><label for="gpPres">Quantas pessoas do grupo já estão presentes?</label><input type="number" id="gpPres" inputmode="numeric" min="0" max="' + pessoas + '" placeholder="0"></div>' +
+      '<p class="hint" id="gpMsg" style="min-height:22px"></p>' +
+      '<div class="foot"><button class="btn btn-primary" id="gpOk" disabled>Liberar escolha da mesa</button><button class="btn btn-secondary" id="cx">Cancelar</button></div>',
+      function (m) {
+        var inp = m.querySelector("#gpPres"), ok = m.querySelector("#gpOk"), msg = m.querySelector("#gpMsg");
+        function chk() {
+          var v = parseInt(inp.value, 10);
+          if (isNaN(v) || v < 0) { ok.disabled = true; msg.textContent = ""; return; }
+          if (v > pessoas) { ok.disabled = true; msg.textContent = "O número de presentes não pode passar de " + pessoas + "."; return; }
+          if (v < min) { ok.disabled = true; msg.textContent = "Ainda não pode sentar: faltam " + (min - v) + " pessoa(s) para chegar a 70% do grupo."; return; }
+          ok.disabled = false; msg.textContent = v + " de " + pessoas + " presentes (" + Math.round(v / pessoas * 100) + "%). Pode escolher a mesa.";
+        }
+        inp.oninput = chk; inp.focus();
+        ok.onclick = function () {
+          var v = parseInt(inp.value, 10);
+          if (isNaN(v) || v < min || v > pessoas) return chk();
+          closeModal(); pickMesaLista(titulo, pessoas, area, preferId, onPick, true);
+        };
+        m.querySelector("#cx").onclick = closeModal;
+      });
+  }
+  function pickMesaLista(titulo, pessoas, area, preferId, onPick, grande) {
     var lista = S.mesas.filter(function (m) { return m.ativa; });
     var itens = lista.map(function (m) {
       var est = mesaEstado(m);
@@ -170,10 +198,10 @@
       itens.map(function (i) {
         return '<button data-id="' + i.m.id + '" class="' + (i.sug ? "sug" : "") + '"><span><b>' + esc(i.m.nome) + "</b> · " + esc(i.m.area) + " · " + i.m.cap_min + "-" + i.m.cap_max +
           ' lugares</span><span class="pill ' + (i.est === "livre" ? "ok" : i.est === "reservada" ? "warn" : "bad") + '">' + ESTADO_TXT[i.est] + "</span></button>";
-      }).join("") + '</div><div class="foot"><button class="btn btn-secondary" id="semMesa">Sentar sem mesa</button><button class="btn btn-secondary" id="cx">Cancelar</button></div>',
+      }).join("") + '</div><div class="foot">' + (grande ? "" : '<button class="btn btn-secondary" id="semMesa">Sentar sem mesa</button>') + '<button class="btn btn-secondary" id="cx">Cancelar</button></div>',
       function (m) {
         m.querySelectorAll("#pk button").forEach(function (b) { b.onclick = function () { closeModal(); onPick(b.getAttribute("data-id")); }; });
-        m.querySelector("#semMesa").onclick = function () { closeModal(); onPick(null); };
+        var sm = m.querySelector("#semMesa"); if (sm) sm.onclick = function () { closeModal(); onPick(null); };
         m.querySelector("#cx").onclick = closeModal;
       });
   }
