@@ -59,6 +59,7 @@
     $("tMsg").textContent = r.status === "pendente" ? "Recebemos seu pedido. A equipe confirmará em breve."
       : r.status === "confirmada" ? "Reserva confirmada! Guarde o código. Chegue com até " + (cfg.tolerancia_atraso_min || 15) + " min de tolerância."
       : "";
+    D.avisoGrupo("aviso70T", $("tMsg"), active ? r.pessoas : 0, false);
     $("btnCancel").hidden = !active; $("btnIcs").hidden = !active;
     if (cfg.whatsapp) {
       $("btnWa").hidden = false;
@@ -96,8 +97,10 @@
 
   $("comoBox").innerHTML = D.comoHtml("como"); D.bindComo("como");
   D.maskPhone($("tel")); D.maskPhone($("lkTel"));
-  $("minus").onclick = function () { qtd = Math.max(1, qtd - 1); $("qtd").textContent = qtd; loadSlots(); };
-  $("plus").onclick = function () { qtd = Math.min(cfg ? cfg.max_pessoas_reserva : 12, qtd + 1); $("qtd").textContent = qtd; loadSlots(); };
+  $("minus").onclick = function () { qtd = Math.max(1, qtd - 1); $("qtd").textContent = qtd; D.aplicarAreasRadios("area", qtd); avisoForm(); loadSlots(); };
+  $("plus").onclick = function () { qtd = Math.min(cfg ? cfg.max_pessoas_reserva : 12, qtd + 1); $("qtd").textContent = qtd; D.aplicarAreasRadios("area", qtd); avisoForm(); loadSlots(); };
+  function avisoForm() { D.avisoGrupo("aviso70", $("qtd").closest(".field"), qtd, false); }
+  D.aplicarAreasRadios("area", qtd); avisoForm();
   $("data").addEventListener("change", loadSlots);
   document.querySelectorAll('input[name="area"]').forEach(function (r) { r.addEventListener("change", loadSlots); });
 
