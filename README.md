@@ -30,7 +30,7 @@ da própria página, e as tabelas só são lidas por usuários cadastrados na eq
 
 ## O que o sistema faz
 
-**Fila (cliente):** senha numerada por dia, posição e espera estimada atualizadas a cada 4 segundos, aviso na tela e
+**Fila (cliente):** senha numerada por dia, posição (sem tempo estimado de espera) atualizada a cada 4 segundos, aviso na tela e
 vibração quando a mesa está pronta, sair da fila. A prioridade (idoso, gestante, PCD) **não** é escolhida pelo cliente:
 só a recepção marca.
 
@@ -73,6 +73,10 @@ Filtros no topo: **Hoje, 7 dias, 30 dias, 90 dias, 12 meses**, **Dia específico
 - O cliente não vê a justificativa; vê só que o horário/dia não está disponível.
 
 ## Salões
+
+Regras de lugares: Salão Principal com mesas de até 8 pessoas, Kids até 6 e Mezanino sem esse limite. Grupos de mais de 8 pessoas
+só podem ficar no Mezanino (fila e reservas, no cliente, na equipe e no banco), e grupos de 7 ou mais não vão para o Kids.
+O `schema.sql` reduz mesas antigas acima do limite (Principal para 8, Kids para 6) e impede cadastrar novas.
 
 Salão Principal, Mezanino e Kids. Rodar o `schema.sql` de novo é seguro: mesas, filas e reservas antigas de "Salão Interno"
 ou "Área Externa" passam para "Salão Principal" e o restante dos dados é mantido. As mesas de exemplo só são criadas em

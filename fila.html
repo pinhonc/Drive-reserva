@@ -48,7 +48,7 @@
     </section>
 
     <section id="vTicket" hidden>
-      <div id="calledBanner" class="called-banner" hidden>Sua mesa está pronta! Dirija-se à recepção.</div>
+      <div id="calledBanner" class="called-banner" hidden>Sua mesa está pronta! Dirija-se à recepção.<br><button type="button" class="btn btn-secondary btn-sm" id="btnSilenciar" style="margin-top:10px">Silenciar alerta</button></div>
       <div class="ticket">
         <div class="ticket-top"><div class="label">SUA SENHA</div><div class="big" id="tPager">000</div></div>
         <div class="ticket-body">
@@ -61,6 +61,7 @@
       </div>
       <div class="zigzag"></div>
       <div class="live" id="tLive"></div>
+      <div class="actions" style="margin-bottom:8px"><button type="button" class="btn btn-secondary btn-sm" id="btnSom" aria-pressed="true">🔔 Som ativado</button></div>
       <div class="actions">
         <button class="btn btn-secondary" id="btnCancel">Sair da fila</button>
         <button class="btn btn-gold" id="btnNew" hidden>Entrar na fila de novo</button>
