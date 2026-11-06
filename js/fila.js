@@ -64,7 +64,12 @@
   function startPoll() { stopPoll(); pollTimer = setInterval(refresh, 4000); }
 
   function renderTicket(s) {
-    $("tPager").textContent = String(s.pager).padStart(3, "0");
+    var big = $("tPager"), lab = $("tLabel");
+    $("tSenha").textContent = String(s.pager).padStart(3, "0");
+    big.style.fontSize = "";
+    if (s.status === "aguardando") { lab.textContent = "SUA POSIÇÃO NA FILA"; big.textContent = s.posicao + "º"; }
+    else if (s.status === "chamado") { lab.textContent = "SUA VEZ"; big.textContent = "Mesa pronta"; big.style.fontSize = "36px"; }
+    else { lab.textContent = "SENHA"; big.textContent = String(s.pager).padStart(3, "0"); }
     $("tNome").textContent = s.nome;
     $("tPessoas").textContent = s.pessoas;
     $("tArea").textContent = s.area;
@@ -83,7 +88,7 @@
     st.innerHTML = '<span class="pill ' + m[1] + '">' + D.esc(m[0]) + "</span>";
 
     if (s.status === "aguardando") {
-      live.innerHTML = "Sua posição: <strong>" + s.posicao + "º</strong>";
+      live.innerHTML = "Atualizamos a sua posição automaticamente. Mantenha esta página aberta.";
     } else if (s.status === "chamado") {
       live.innerHTML = "<strong>Estamos te chamando.</strong> Procure a recepção e informe a senha.";
     } else if (s.status === "sentado") {
