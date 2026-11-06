@@ -1,6 +1,8 @@
 (function () {
   "use strict";
   var D = window.DIB, $ = D.$;
+  // tolerância a arquivos de versões diferentes publicados juntos: sem estes recursos a página ainda abre
+  ["aplicarAreasRadios", "avisoGrupo"].forEach(function (k) { if (typeof D[k] !== "function") D[k] = function () {}; });
   var cfg = null, qtd = 2, slot = null, current = null, lookupPhone = "", reqId = 0;
 
   function show(id) { ["vLoading", "vForm", "vTicket"].forEach(function (v) { $(v).hidden = v !== id; }); }

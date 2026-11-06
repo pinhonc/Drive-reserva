@@ -1,6 +1,8 @@
 (function () {
   "use strict";
   var D = window.DIB, $ = D.$;
+  // tolerância a arquivos de versões diferentes publicados juntos: sem estes recursos a página ainda abre
+  ["aplicarAreasRadios", "avisoGrupo"].forEach(function (k) { if (typeof D[k] !== "function") D[k] = function () {}; });
   var KEY = "dib_fila_token";
   var qtd = 2, pollTimer = null, lastStatus = null, lastPos = null;
 
@@ -168,12 +170,12 @@
   };
   $("btnNew").onclick = function () { localStorage.removeItem(KEY); lastStatus = null; lastPos = null; pararChamado(); document.title = "Fila de espera — Drive In Burger"; init(); };
 
-  $("btnSom").onclick = function () {
+  if ($("btnSom")) $("btnSom").onclick = function () {
     somOn = !somOn; try { localStorage.setItem(SOM_KEY, somOn ? "on" : "off"); } catch (e) {}
     atualizarBotaoSom();
     if (somOn) { tom(880, 0, 0.2, 0.2); if (lastStatus === "chamado") { silenciado = false; iniciarChamado(); } } else pararChamado();
   };
-  $("btnSilenciar").onclick = function () { silenciado = true; pararChamado(); D.toast("Alerta silenciado. Procure a recepção."); };
+  if ($("btnSilenciar")) $("btnSilenciar").onclick = function () { silenciado = true; pararChamado(); D.toast("Alerta silenciado. Procure a recepção."); };
   atualizarBotaoSom();
 
   document.addEventListener("visibilitychange", function () { if (!document.hidden) refresh(); });
