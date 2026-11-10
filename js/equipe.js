@@ -161,12 +161,20 @@
   // informa que pelo menos 70% do grupo já está presente.
   var GRUPO_GRANDE = 6, PCT_PRESENTES = 0.7;
   function pickMesa(titulo, pessoas, area, preferId, onPick) {
-    if (pessoas < GRUPO_GRANDE) return pickMesaLista(titulo, pessoas, area, preferId, onPick);
+    // Mesas desativadas: não há escolha de mesa, só a confirmação de sentar (com a regra dos 70%).
+    if (pessoas < GRUPO_GRANDE) {
+      return openModal("<h3>" + esc(titulo) + '</h3><p class="hint" style="margin:-8px 0 12px">Grupo de ' + pessoas + ' pessoa(s). Confirmar que o cliente foi sentado?</p>' +
+        '<div class="foot"><button class="btn btn-primary" id="stOk">Sentar</button><button class="btn btn-secondary" id="cx">Cancelar</button></div>',
+        function (m) {
+          m.querySelector("#stOk").onclick = function () { closeModal(); onPick(null); };
+          m.querySelector("#cx").onclick = closeModal;
+        });
+    }
     var min = Math.ceil(pessoas * PCT_PRESENTES - 1e-9);
-    openModal("<h3>" + esc(titulo) + '</h3><p class="hint" style="margin:-8px 0 12px">Grupo de ' + pessoas + ' pessoas. Para liberar a mesa, é preciso que pelo menos <b>' + min + ' pessoas (70%)</b> já estejam presentes.</p>' +
+    openModal("<h3>" + esc(titulo) + '</h3><p class="hint" style="margin:-8px 0 12px">Grupo de ' + pessoas + ' pessoas. Para sentar, é preciso que pelo menos <b>' + min + ' pessoas (70%)</b> já estejam presentes.</p>' +
       '<div class="field"><label for="gpPres">Quantas pessoas do grupo já estão presentes?</label><input type="number" id="gpPres" inputmode="numeric" min="0" max="' + pessoas + '" placeholder="0"></div>' +
       '<p class="hint" id="gpMsg" style="min-height:22px"></p>' +
-      '<div class="foot"><button class="btn btn-primary" id="gpOk" disabled>Liberar escolha da mesa</button><button class="btn btn-secondary" id="cx">Cancelar</button></div>',
+      '<div class="foot"><button class="btn btn-primary" id="gpOk" disabled>Sentar</button><button class="btn btn-secondary" id="cx">Cancelar</button></div>',
       function (m) {
         var inp = m.querySelector("#gpPres"), ok = m.querySelector("#gpOk"), msg = m.querySelector("#gpMsg");
         function chk() {
@@ -174,13 +182,13 @@
           if (isNaN(v) || v < 0) { ok.disabled = true; msg.textContent = ""; return; }
           if (v > pessoas) { ok.disabled = true; msg.textContent = "O número de presentes não pode passar de " + pessoas + "."; return; }
           if (v < min) { ok.disabled = true; msg.textContent = "Ainda não pode sentar: faltam " + (min - v) + " pessoa(s) para chegar a 70% do grupo."; return; }
-          ok.disabled = false; msg.textContent = v + " de " + pessoas + " presentes (" + Math.round(v / pessoas * 100) + "%). Pode escolher a mesa.";
+          ok.disabled = false; msg.textContent = v + " de " + pessoas + " presentes (" + Math.round(v / pessoas * 100) + "%). Pode sentar.";
         }
         inp.oninput = chk; inp.focus();
         ok.onclick = function () {
           var v = parseInt(inp.value, 10);
           if (isNaN(v) || v < min || v > pessoas) return chk();
-          closeModal(); pickMesaLista(titulo, pessoas, area, preferId, onPick, true);
+          closeModal(); onPick(null);
         };
         m.querySelector("#cx").onclick = closeModal;
       });
@@ -430,7 +438,7 @@
     else if (a === "cancelar") { if (confirm("Cancelar a reserva de " + r.nome + "?")) act(setRes(id, { status: "cancelada" })); }
     else if (a === "wa") window.open(D.waLink(r.telefone, "Olá, " + r.nome + "! Sua reserva " + r.codigo + " no Drive In Burger para " + D.fmtDate(r.data) + " às " + hhmm(r.hora) + " (" + r.pessoas + " pessoas) está confirmada. Até lá!"), "_blank", "noopener");
     else if (a === "sentar") pickMesa("Sentar " + r.nome, r.pessoas, r.area, r.mesa_id, function (mesaId) {
-      act(async function () { await setRes(id, { status: "sentada", mesa_id: mesaId })(); if (mesaId) await setMesaStatus(mesaId, "ocupada"); }, "Cliente sentado");
+      act(async function () { await setRes(id, { status: "sentada" })(); if (mesaId) await setMesaStatus(mesaId, "ocupada"); }, "Cliente sentado");
     });
     else if (a === "finalizar") act(async function () {
       await setRes(id, { status: "concluida" })();
