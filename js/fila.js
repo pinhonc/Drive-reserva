@@ -6,49 +6,100 @@
   var KEY = "dib_fila_token";
   var qtd = 2, pollTimer = null, lastStatus = null, lastPos = null;
 
-  // ------------------------------------------------------------ sons (WebAudio, sem arquivos)
-  // Navegadores só liberam áudio depois de um toque do usuário: o primeiro toque na página já destrava.
-  var SOM_KEY = "dib_fila_som", actx = null, somOn = true, chamadoTimer = null, silenciado = false;
+  // ------------------------------------------------------------ sons
+  // Usa elementos <audio> com sons gerados no próprio código (sem arquivos): tocam mesmo com o celular no modo
+  // silencioso do iPhone e só precisam de UM toque do cliente na tela para serem liberados pelo navegador.
+  var SOM_KEY = "dib_fila_som", somOn = true, chamadoTimer = null, silenciado = false, desbloqueado = false, SONS = null, wakeLock = null;
   try { somOn = localStorage.getItem(SOM_KEY) !== "off"; } catch (e) {}
-  function ctx() {
-    try {
-      if (!actx) { var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; actx = new AC(); }
-      if (actx.state === "suspended") actx.resume();
-      return actx;
-    } catch (e) { return null; }
+
+  function wavUri(segs, total, quadrada) {
+    var sr = 22050, n = Math.round(sr * total), pcm = new Int16Array(n);
+    segs.forEach(function (g) {                        // g = [frequência, início(s), duração(s), volume]
+      var i0 = Math.round(g[1] * sr), len = Math.round(g[2] * sr);
+      for (var i = 0; i < len && i0 + i < n; i++) {
+        var t = i / sr, env = Math.min(1, t / 0.008) * Math.exp(-3 * t / g[2]) , w = Math.sin(2 * Math.PI * g[0] * t);
+        if (quadrada) w = w >= 0 ? 0.7 : -0.7;
+        pcm[i0 + i] = Math.max(-32767, Math.min(32767, Math.round(w * env * g[3] * 32767)));
+      }
+    });
+    var buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function str(o, t) { for (var k = 0; k < t.length; k++) v.setUint8(o + k, t.charCodeAt(k)); }
+    str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, "data"); v.setUint32(40, n * 2, true);
+    for (var j = 0; j < n; j++) v.setInt16(44 + j * 2, pcm[j], true);
+    var bin = "", bytes = new Uint8Array(buf);
+    for (var q = 0; q < bytes.length; q += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(q, q + 8192));
+    return "data:audio/wav;base64," + btoa(bin);
   }
-  function tom(freq, ini, dur, vol, tipo) {
-    var c = ctx(); if (!c) return;
-    var o = c.createOscillator(), g = c.createGain(), t = c.currentTime + ini;
-    o.type = tipo || "sine"; o.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol || 0.25, t + 0.015);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.05);
+  function sons() {
+    if (SONS) return SONS;
+    function el(uri, loop) { var a = new Audio(uri); a.preload = "auto"; a.loop = !!loop; return a; }
+    SONS = {
+      up: el(wavUri([[660, 0, 0.2, 0.7], [880, 0.18, 0.32, 0.7]], 0.55)),
+      down: el(wavUri([[330, 0, 0.35, 0.7]], 0.4)),
+      alert: el(wavUri([[1040, 0, 0.16, 0.9], [1040, 0.24, 0.16, 0.9], [1320, 0.48, 0.28, 0.9]], 2.2, true), true)
+    };
+    return SONS;
   }
+  function tocar(a) {
+    try { a.currentTime = 0; var p = a.play(); if (p && p.catch) p.catch(function () { desbloqueado = false; atualizarBanner(); }); } catch (e) {}
+  }
+  // o navegador só libera o áudio depois de um toque: ao primeiro toque, "acorda" os sons em silêncio
+  function destravar() {
+    if (desbloqueado) return;
+    desbloqueado = true;
+    var S = sons();
+    ["up", "down", "alert"].forEach(function (k) {
+      var a = S[k]; if (!a.paused) return;
+      a.muted = true;
+      var p; try { p = a.play(); } catch (e) {}
+      if (p && p.then) p.then(function () { a.pause(); a.currentTime = 0; a.muted = false; }).catch(function () { a.muted = false; });
+      else a.muted = false;
+    });
+    atualizarBanner();
+  }
+  function atualizarBanner() {
+    var b = $("btnAtivarSom");
+    var precisa = somOn && !desbloqueado && !$("vTicket").hidden;
+    if (!b) {
+      if (!precisa) return;
+      b = document.createElement("button"); b.type = "button"; b.id = "btnAtivarSom"; b.className = "btn btn-gold";
+      b.style.cssText = "width:100%;margin-bottom:12px"; b.textContent = "🔔 Toque aqui para ativar o alerta sonoro";
+      b.onclick = function () { destravar(); if (somOn) tocar(sons().up); };
+      $("vTicket").insertBefore(b, $("vTicket").firstChild);
+    }
+    b.hidden = !precisa;
+  }
+  function somTeste() { if (somOn) tocar(sons().up); }
   // posição mudou: subiu na fila = dois tons ascendentes; desceu (entrou prioridade na frente) = um tom grave
   function somPosicao(melhorou) {
     if (!somOn) return;
-    if (melhorou) { tom(660, 0, 0.18, 0.22); tom(880, 0.16, 0.28, 0.22); }
-    else tom(330, 0, 0.3, 0.2);
+    tocar(melhorou ? sons().up : sons().down);
     try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) {}
   }
-  // chamado: padrão intermitente (3 bips rápidos, pausa) repetido até o cliente silenciar ou a situação mudar
-  function ciclo() {
-    if (!somOn) return;
-    tom(1040, 0, 0.14, 0.35, "square"); tom(1040, 0.22, 0.14, 0.35, "square"); tom(1320, 0.44, 0.22, 0.35, "square");
-    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 300]); } catch (e) {}
-  }
+  // chamado: padrão intermitente (3 bips rápidos, pausa) em repetição até o cliente silenciar ou a situação mudar
+  function vibraChamado() { try { if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 300]); } catch (e) {} }
   function iniciarChamado() {
     if (chamadoTimer || silenciado) return;
-    ciclo(); chamadoTimer = setInterval(ciclo, 2200);
+    if (somOn) tocar(sons().alert);
+    vibraChamado(); chamadoTimer = setInterval(vibraChamado, 2200);
   }
-  function pararChamado() { if (chamadoTimer) { clearInterval(chamadoTimer); chamadoTimer = null; } }
+  function pararChamado() {
+    if (chamadoTimer) { clearInterval(chamadoTimer); chamadoTimer = null; }
+    if (SONS) { try { SONS.alert.pause(); SONS.alert.currentTime = 0; } catch (e) {} }
+  }
   function atualizarBotaoSom() {
     var b = $("btnSom"); if (!b) return;
     b.textContent = somOn ? "🔔 Som ativado" : "🔕 Som desativado"; b.setAttribute("aria-pressed", somOn ? "true" : "false");
   }
-  ["pointerdown", "touchstart", "keydown"].forEach(function (ev) { document.addEventListener(ev, function () { ctx(); }, { passive: true }); });
+  // mantém a tela acesa enquanto o cliente espera (celular com tela apagada não toca o alerta)
+  function manterTela() {
+    try {
+      if (navigator.wakeLock && !wakeLock) navigator.wakeLock.request("screen").then(function (l) { wakeLock = l; l.addEventListener("release", function () { wakeLock = null; }); }).catch(function () {});
+    } catch (e) {}
+  }
+  ["pointerdown", "touchstart", "keydown"].forEach(function (ev) { document.addEventListener(ev, destravar, { passive: true }); });
 
   // link do QR gerado pela recepção: ?t=<token> devolve o cliente à sua senha
   (function () {
@@ -88,7 +139,7 @@
     st.innerHTML = '<span class="pill ' + m[1] + '">' + D.esc(m[0]) + "</span>";
 
     if (s.status === "aguardando") {
-      live.innerHTML = "Atualizamos a sua posição automaticamente. Mantenha esta página aberta.";
+      live.innerHTML = '<span class="live-aviso">Atualizamos a sua posição automaticamente.<br>Mantenha esta página aberta.</span>';
     } else if (s.status === "chamado") {
       live.innerHTML = "<strong>Estamos te chamando.</strong> Procure a recepção e informe a senha.";
     } else if (s.status === "sentado") {
@@ -102,6 +153,8 @@
       silenciado = false;
     }
     if (s.status === "chamado") iniciarChamado(); else pararChamado();
+    atualizarBanner();
+    if (s.status === "aguardando" || s.status === "chamado") manterTela();
     if (s.status === "aguardando") {
       if (lastPos !== null && s.posicao !== lastPos) somPosicao(s.posicao < lastPos);
       lastPos = s.posicao;
@@ -178,11 +231,16 @@
   if ($("btnSom")) $("btnSom").onclick = function () {
     somOn = !somOn; try { localStorage.setItem(SOM_KEY, somOn ? "on" : "off"); } catch (e) {}
     atualizarBotaoSom();
-    if (somOn) { tom(880, 0, 0.2, 0.2); if (lastStatus === "chamado") { silenciado = false; iniciarChamado(); } } else pararChamado();
+    if (somOn) { destravar(); somTeste(); if (lastStatus === "chamado") { silenciado = false; iniciarChamado(); } } else pararChamado();
+    atualizarBanner();
   };
   if ($("btnSilenciar")) $("btnSilenciar").onclick = function () { silenciado = true; pararChamado(); D.toast("Alerta silenciado. Procure a recepção."); };
   atualizarBotaoSom();
 
-  document.addEventListener("visibilitychange", function () { if (!document.hidden) refresh(); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    refresh(); manterTela();
+    if (chamadoTimer && !silenciado && somOn && SONS && SONS.alert.paused) tocar(SONS.alert);
+  });
   init();
 })();
