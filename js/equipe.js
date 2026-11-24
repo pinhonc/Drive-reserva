@@ -242,7 +242,7 @@
         '<div class="acts">' + (called ? "" : '<button class="btn btn-secondary btn-sm" data-act="chamar">Chamar</button>') +
         '<button class="btn btn-primary btn-sm" data-act="sentar">Sentar</button><button class="btn btn-secondary btn-sm" data-act="wa">WhatsApp</button>' +
         '<button class="btn btn-secondary btn-sm" data-act="qr">QR da fila</button><button class="btn btn-secondary btn-sm" data-act="prio">' + (f.prioritario ? "Tirar prioridade" : "Prioridade") + '</button><button class="btn btn-secondary btn-sm" data-act="editar">Editar</button>' +
-        '<button class="btn btn-danger btn-sm" data-act="naoveio">Não veio</button></div></div>';
+        '<button class="btn btn-danger btn-sm" data-act="naoveio">Não veio</button><button class="btn btn-danger btn-sm" data-act="excluir">Excluir</button></div></div>';
     }
 
     $("pane").innerHTML =
@@ -260,7 +260,7 @@
           var t = f.status === "sentado" ? ["Atendido", "ok"] : f.status === "cancelado" ? ["Desistiu", "bad"] : ["Não veio", "bad"];
           return '<div class="item" data-id="' + f.id + '"><div class="top"><div class="num">' + String(f.pager).padStart(3, "0") + '</div><div class="nm">' + esc(f.nome) + '</div><span class="pill ' + t[1] + '">' + t[0] + "</span></div>" +
             '<div class="meta"><span>👥 <b>' + f.pessoas + "</b></span><span>📍 " + esc(f.area) + "</span><span>📞 " + esc(f.telefone) + "</span>" + (f.pager_fisico ? "<span>📟 " + esc(f.pager_fisico) + "</span>" : "") + "</div>" +
-            '<div class="acts"><button class="btn btn-secondary btn-sm" data-act="editar">Editar</button>' + (f.status === "sentado" ? '<button class="btn btn-gold btn-sm" data-act="voltar">Voltar à fila</button>' : "") + "</div></div>";
+            '<div class="acts"><button class="btn btn-secondary btn-sm" data-act="editar">Editar</button>' + (f.status === "sentado" ? '<button class="btn btn-gold btn-sm" data-act="voltar">Voltar à fila</button>' : "") + '<button class="btn btn-danger btn-sm" data-act="excluir">Excluir</button></div></div>';
         }).join("") + "</div>" : "");
 
     $("filaAberta").onchange = function () {
@@ -341,6 +341,7 @@
     else if (a === "voltar") voltarFila(f);
     else if (a === "prio") act(async function () { must(await sb.from("fila").update({ prioritario: !f.prioritario }).eq("id", id)); }, f.prioritario ? "Prioridade removida" : "Marcado como prioritário");
     else if (a === "chamar") act(async function () { must(await sb.from("fila").update({ status: "chamado", chamado_em: nowIso() }).eq("id", id)); }, "Cliente chamado. Avise pelo WhatsApp se não estiver por perto.");
+    else if (a === "excluir") { if (confirm("Excluir definitivamente o registro de " + f.nome + " da fila?\nEsta ação não pode ser desfeita.")) act(async function () { must(await sb.from("fila").delete().eq("id", id)); }, "Registro excluído"); }
     else if (a === "naoveio") { if (confirm("Marcar " + f.nome + " como 'não veio'?")) act(async function () { must(await sb.from("fila").update({ status: "nao_compareceu" }).eq("id", id)); }); }
     else if (a === "wa") window.open(D.waLink(f.telefone, "Olá, " + f.nome + "! Aqui é do Drive In Burger. Sua mesa está pronta (senha " + String(f.pager).padStart(3, "0") + "). Pode vir à recepção!"), "_blank", "noopener");
     else if (a === "sentar") pickMesa("Sentar " + f.nome, f.pessoas, f.area, null, function (mesaId) {
